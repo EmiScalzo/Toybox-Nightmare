@@ -61,6 +61,8 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
     val runState by vm.runState.collectAsStateWithLifecycle()
     val showTutorial by vm.showTutorial.collectAsStateWithLifecycle()
     val tutorialStep by vm.tutorialStep.collectAsStateWithLifecycle()
+    val showLore by vm.showLore.collectAsStateWithLifecycle()
+    val loreStep by vm.loreStep.collectAsStateWithLifecycle()
     val newUnlocks by vm.newlyUnlockedAchievements.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -70,7 +72,8 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
                 unlockedAchievementCount = unlockedAchievements.size,
                 totalAchievements = GameCatalog.achievements.size,
                 onNavigate = vm::navigate,
-                onOpenTutorial = { vm.openTutorial(fromMenu = true) }
+                onOpenTutorial = { vm.openTutorial(fromMenu = true) },
+                onOpenLore = vm::openLore
             )
 
             AppRoute.RUN_SETUP -> RunSetupScreen(
@@ -98,6 +101,8 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
                         onAbility = vm::triggerAbility,
                         onUseConsumable = vm::useConsumable,
                         onCycleConsumable = vm::cycleConsumable,
+                        onInteract = vm::interact,
+                        onAbandonObjective = vm::abandonObjective,
                         onTogglePause = { vm.togglePause(it) },
                         onOpenTutorial = { vm.openTutorial(fromMenu = false) },
                         onResolvePartChoice = vm::resolvePartChoice,
@@ -105,10 +110,13 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
                         onPurchaseShopOffer = vm::purchaseShopOffer,
                         onCloseShop = vm::closeShop,
                         onRepairAtBench = vm::repairAtBench,
+                        onStartRepairMinigame = vm::startRepairMinigame,
+                        onRepairMinigameAction = vm::handleRepairMinigameAction,
                         onCloseRepairBench = vm::closeRepairBench,
                         onReopenFacility = vm::reopenRoomFacility,
                         onInspectCompanion = vm::inspectCompanion,
                         onResolveCompanionDialog = vm::resolveCompanionDialog,
+                        onResolveManufacturerOffer = vm::resolveManufacturerOffer,
                         onAbandonRun = vm::abandonRun
                     )
                 }
@@ -128,7 +136,8 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
                         unlockedAchievementCount = unlockedAchievements.size,
                         totalAchievements = GameCatalog.achievements.size,
                         onNavigate = vm::navigate,
-                        onOpenTutorial = { vm.openTutorial(fromMenu = true) }
+                        onOpenTutorial = { vm.openTutorial(fromMenu = true) },
+                        onOpenLore = vm::openLore
                     )
                 }
             }
@@ -164,9 +173,17 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
         TutorialOverlayDialog(
             visible = showTutorial,
             step = tutorialStep,
-            onNext = { vm.nextTutorialStep(6) },
+            onNext = { vm.nextTutorialStep(7) },
             onPrev = vm::prevTutorialStep,
             onClose = vm::closeTutorial
+        )
+
+        LoreIntroOverlay(
+            visible = showLore,
+            step = loreStep,
+            onNext = { vm.nextLoreStep(4) },
+            onPrev = vm::prevLoreStep,
+            onSkip = vm::closeLore
         )
     }
 }

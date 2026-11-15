@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CutCornerShape
@@ -14,9 +15,14 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -26,6 +32,10 @@ import com.example.data.catalog.GameCatalog
 import com.example.data.model.BodyZone
 import com.example.data.model.CompanionId
 import com.example.data.model.ConsumableType
+import com.example.data.model.ManufacturerEncounter
+import com.example.data.model.RepairActionMode
+import com.example.data.model.RepairMaterial
+import com.example.data.model.RepairMinigameType
 import com.example.data.model.RoomEventDef
 import com.example.data.model.RoomMechanic
 import com.example.data.model.WearState
@@ -392,12 +402,165 @@ fun ShopDialog(
 fun RepairBenchDialog(
     state: GameRunState,
     onRepairZone: (BodyZone?) -> Unit,
+    onStartRepairMinigame: (BodyZone, RepairActionMode) -> Unit,
     onClose: () -> Unit
+) {
+    var selectedMode by remember { mutableStateOf(RepairActionMode.REPAIR) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CharcoalBlack.copy(alpha = 0.86f))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        ToyboxFrameCard(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp).heightIn(max = 620.dp),
+            borderColor = TarnishedBrass
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("MESA DE COSTURA", style = MaterialTheme.typography.headlineMedium, color = TarnishedBrass)
+                Text("${state.buttons} ●", style = MaterialTheme.typography.labelLarge, color = AgedIvory)
+            }
+            Text(selectedMode.desc, style = MaterialTheme.typography.bodyMedium, color = Parchment)
+
+            Spacer(Modifier.height(8.dp))
+            // Action mode tabs: Reparar / Reforzar / Modificar
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                RepairActionMode.entries.forEach { mode ->
+                    val active = mode == selectedMode
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = 48.dp)
+                            .clip(CutCornerShape(4.dp))
+                            .background(if (active) CrimsonBlood else AgedWoodMid)
+                            .border(1.dp, if (active) TarnishedBrass else AgedWoodLight, CutCornerShape(4.dp))
+                            .testTag("repair_mode_${mode.name}")
+                            .clickable { selectedMode = mode }
+                            .padding(vertical = 8.dp, horizontal = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(mode.displayName, style = MaterialTheme.typography.labelLarge, color = AgedIvory)
+                    }
+                }
+            }
+
+            // Materials inventory strip
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                RepairMaterial.entries.forEach { mat ->
+                    val count = state.materials[mat] ?: 0
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(CharcoalBlack.copy(alpha = 0.7f), CutCornerShape(4.dp))
+                            .border(1.dp, if (count > 0) TarnishedBrass else AgedWoodLight, CutCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Image(
+                            bitmap = PixelArtSprites.forMaterial(mat),
+                            contentDescription = mat.displayName,
+                            filterQuality = FilterQuality.None,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "${mat.displayName.split(" ").first()}: $count",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (count > 0) AgedIvory else ParchmentDark
+                        )
+                    }
+                }
+            }
+
+            StitchedDivider(Modifier.padding(vertical = 8.dp))
+
+            Column(
+                modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                BodyZone.entries.forEach { z ->
+                    val part = state.equippedParts[z] ?: return@forEach
+                    val needsRepair = part.isDetached || part.durability < part.def.maxDurability
+                    val canOperate = (needsRepair || selectedMode != RepairActionMode.REPAIR) && state.buttons >= 1
+                    val reinforcedLeft = state.partReinforcedRooms[z] ?: 0
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .background(AgedWoodMid, CutCornerShape(4.dp))
+                            .border(1.dp, if (canOperate) MutedMoss else AgedWoodLight, CutCornerShape(4.dp))
+                            .testTag("repair_zone_${z.name}")
+                            .clickable(enabled = canOperate) { onStartRepairMinigame(z, selectedMode) }
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            bitmap = PixelArtSprites.forBodyPart(part.def.id, z),
+                            contentDescription = part.def.name,
+                            filterQuality = FilterQuality.None,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(30.dp).padding(end = 8.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("${z.displayName}: ${part.def.name}", style = MaterialTheme.typography.titleMedium, color = AgedIvory)
+                            val extra = if (reinforcedLeft > 0) " • Reforzado ($reinforcedLeft)" else ""
+                            Text("${part.wearState.displayName} (${part.durability}/${part.def.maxDurability})$extra", style = MaterialTheme.typography.bodyMedium, color = ParchmentDark)
+                        }
+                        if (needsRepair && state.buttons >= 2) {
+                            TextButton(
+                                onClick = { onRepairZone(z) },
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                            ) {
+                                Text("Rápido 2●", style = MaterialTheme.typography.labelSmall, color = ParchmentDark)
+                            }
+                        }
+                        Text(
+                            text = if (canOperate) "Taller 1●" else "Intacto",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (canOperate) TarnishedBrass else MutedMoss
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ToyboxPlaqueButton(text = "Cerrar", onClick = onClose, modifier = Modifier.weight(1f), testTag = "repair_close_btn")
+                ToyboxPlaqueButton(
+                    text = "Reparar Todo (5 ●)",
+                    primary = true,
+                    enabled = state.buttons >= 5,
+                    onClick = { onRepairZone(null) },
+                    modifier = Modifier.weight(1f),
+                    testTag = "repair_all_btn"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun RepairMinigameDialog(
+    minigame: PendingRepairMinigame,
+    currentButtons: Int,
+    onAction: (String) -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(CharcoalBlack.copy(alpha = 0.85f))
+            .background(CharcoalBlack.copy(alpha = 0.88f))
             .padding(18.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -407,55 +570,290 @@ fun RepairBenchDialog(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("MESA DE COSTURA", style = MaterialTheme.typography.headlineMedium, color = TarnishedBrass)
-                Text("${state.buttons} ●", style = MaterialTheme.typography.labelLarge, color = AgedIvory)
+                Text(minigame.minigameType.displayName.uppercase(), style = MaterialTheme.typography.headlineMedium, color = TarnishedBrass)
+                Text("Intentos: ${minigame.attemptsLeft}", style = MaterialTheme.typography.labelLarge, color = AgedIvory)
             }
-            Text("Repara piezas dañadas o vuelve a coser partes desprendidas.", style = MaterialTheme.typography.bodyMedium, color = Parchment)
-            StitchedDivider(Modifier.padding(vertical = 8.dp))
+            Text(
+                text = "${minigame.mode.displayName} • ${minigame.zone.displayName}",
+                style = MaterialTheme.typography.labelLarge,
+                color = CrimsonBright
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(minigame.minigameType.instruction, style = MaterialTheme.typography.bodyMedium, color = Parchment)
+            StitchedDivider(Modifier.padding(vertical = 10.dp))
 
-            BodyZone.entries.forEach { z ->
-                val part = state.equippedParts[z] ?: return@forEach
-                val needsRepair = part.isDetached || part.durability < part.def.maxDurability
-                val canPay = state.buttons >= 2 && needsRepair
-                Row(
+            when (minigame.minigameType) {
+                RepairMinigameType.SEWING -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        minigame.sequenceTarget.forEachIndexed { idx, num ->
+                            val done = idx < minigame.currentStep
+                            val isNext = idx == minigame.currentStep
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(58.dp)
+                                    .clip(CutCornerShape(6.dp))
+                                    .background(if (done) MutedMoss else if (isNext) CrimsonBlood else AgedWoodMid)
+                                    .border(1.5.dp, if (isNext) TarnishedBrass else AgedWoodLight, CutCornerShape(6.dp))
+                                    .testTag("minigame_sew_$num")
+                                    .clickable(enabled = !done) { onAction("sew_tap:$num") },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (done) "✓" else "Punto $num",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = AgedIvory
+                                )
+                            }
+                        }
+                    }
+                }
+
+                RepairMinigameType.GEARS -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        minigame.gearStates.forEachIndexed { idx, rotState ->
+                            val aligned = rotState == 2
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(64.dp)
+                                    .clip(CutCornerShape(6.dp))
+                                    .background(if (aligned) MutedMoss else AgedWoodMid)
+                                    .border(1.5.dp, if (aligned) TarnishedBrass else CrimsonBright, CutCornerShape(6.dp))
+                                    .testTag("minigame_gear_$idx")
+                                    .clickable { onAction("gear_rotate:$idx") },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("⚙ #${idx + 1}", style = MaterialTheme.typography.titleMedium, color = AgedIvory)
+                                    Text(
+                                        text = when (rotState) {
+                                            2 -> "Alineado"
+                                            1 -> "120°"
+                                            else -> "0°"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TarnishedBrass
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                RepairMinigameType.SPRING_TIMING -> {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(36.dp)
+                                .background(CharcoalBlack, CutCornerShape(4.dp))
+                                .border(1.dp, TarnishedBrassDim, CutCornerShape(4.dp))
+                        ) {
+                            // Golden sweet spot bar (center 38%..62%)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(0.24f)
+                                    .align(Alignment.Center)
+                                    .background(TarnishedBrass.copy(alpha = 0.42f))
+                            )
+                            // Moving cursor
+                            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                val cursorX = maxWidth * minigame.springCursor.coerceIn(0f, 0.96f)
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = cursorX)
+                                        .width(10.dp)
+                                        .fillMaxHeight()
+                                        .background(CrimsonBright)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        ToyboxPlaqueButton(
+                            text = "DETENER RESORTE",
+                            icon = Icons.Default.PanTool,
+                            primary = true,
+                            onClick = { onAction("spring_stop") },
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "minigame_spring_stop"
+                        )
+                    }
+                }
+
+                RepairMinigameType.PORCELAIN -> {
+                    val crackLabels = listOf("Grieta Ocular", "Fisura Mejilla", "Borde Sien")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        crackLabels.forEachIndexed { idx, label ->
+                            val done = idx in minigame.porcelainMatched
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(62.dp)
+                                    .clip(CutCornerShape(6.dp))
+                                    .background(if (done) MutedMoss else AgedWoodMid)
+                                    .border(1.5.dp, if (done) TarnishedBrass else AgedWoodLight, CutCornerShape(6.dp))
+                                    .testTag("minigame_porcelain_$idx")
+                                    .clickable(enabled = !done) { onAction("porcelain_match:$idx") }
+                                    .padding(6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(if (done) "Unida ✓" else label, style = MaterialTheme.typography.labelMedium, color = AgedIvory)
+                            }
+                        }
+                    }
+                }
+
+                RepairMinigameType.WIRING -> {
+                    val wireColors = listOf("Núcleo Latón" to TarnishedBrass, "Chispa Roja" to CrimsonBright, "Bobina Verde" to MutedMoss)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        wireColors.forEachIndexed { idx, (label, col) ->
+                            val done = idx in minigame.wiringMatched
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(62.dp)
+                                    .clip(CutCornerShape(6.dp))
+                                    .background(if (done) col.copy(alpha = 0.45f) else AgedWoodMid)
+                                    .border(1.5.dp, col, CutCornerShape(6.dp))
+                                    .testTag("minigame_wiring_$idx")
+                                    .clickable(enabled = !done) { onAction("wiring_pair:$idx") }
+                                    .padding(6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(if (done) "Conectado ✓" else label, style = MaterialTheme.typography.labelMedium, color = AgedIvory)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ToyboxPlaqueButton(
+                    text = "Cancelar",
+                    onClick = { onAction("cancel") },
+                    modifier = Modifier.weight(1f),
+                    testTag = "minigame_cancel"
+                )
+                ToyboxPlaqueButton(
+                    text = "Rápida (2 ●)",
+                    enabled = currentButtons >= 2,
+                    onClick = { onAction("quick_repair") },
+                    modifier = Modifier.weight(1f),
+                    testTag = "minigame_quick"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ManufacturerDialog(
+    encounter: ManufacturerEncounter,
+    currentButtons: Int,
+    onSelectOffer: (String?) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CharcoalBlack.copy(alpha = 0.88f))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        ToyboxFrameCard(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 470.dp).heightIn(max = 640.dp),
+            borderColor = CrimsonBright
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 3.dp)
-                        .background(AgedWoodMid, CutCornerShape(4.dp))
-                        .border(1.dp, if (canPay) MutedMoss else AgedWoodLight, CutCornerShape(4.dp))
-                        .clickable(enabled = canPay) { onRepairZone(z) }
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .size(56.dp)
+                        .background(CharcoalBlack, CutCornerShape(4.dp))
+                        .border(1.5.dp, TarnishedBrass, CutCornerShape(4.dp)),
+                    contentAlignment = Alignment.Center
                 ) {
                     Image(
-                        bitmap = PixelArtSprites.forBodyPart(part.def.id, z),
-                        contentDescription = part.def.name,
+                        bitmap = PixelArtSprites.manufacturerNpc(),
+                        contentDescription = "El Fabricante",
                         filterQuality = FilterQuality.None,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(30.dp).padding(end = 8.dp)
+                        modifier = Modifier.size(46.dp)
                     )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("${z.displayName}: ${part.def.name}", style = MaterialTheme.typography.titleMedium, color = AgedIvory)
-                        Text("${part.wearState.displayName} (${part.durability}/${part.def.maxDurability})", style = MaterialTheme.typography.bodyMedium, color = ParchmentDark)
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("PRESENCIA ANTIGUA • $currentButtons ●", style = MaterialTheme.typography.labelLarge, color = TarnishedBrass)
+                    Text(encounter.title, style = MaterialTheme.typography.headlineMedium, color = AgedIvory)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(encounter.dialogue, style = MaterialTheme.typography.bodyLarge, color = Parchment)
+            StitchedDivider(Modifier.padding(vertical = 8.dp))
+
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                encounter.offers.forEach { offer ->
+                    val canAfford = currentButtons >= offer.buttonsCost
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .clip(CutCornerShape(5.dp))
+                            .background(if (canAfford) AgedWoodMid else CharcoalBlack)
+                            .border(1.2.dp, if (canAfford) TarnishedBrass else AgedWoodLight, CutCornerShape(5.dp))
+                            .testTag("manufacturer_offer_${offer.id}")
+                            .clickable(enabled = canAfford) { onSelectOffer(offer.id) }
+                            .padding(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(offer.category.displayName.uppercase(), style = MaterialTheme.typography.labelSmall, color = CrimsonBright)
+                            if (offer.buttonsCost > 0) {
+                                Text("${offer.buttonsCost} ●", style = MaterialTheme.typography.labelLarge, color = TarnishedBrass)
+                            }
+                        }
+                        Text(offer.title, style = MaterialTheme.typography.titleMedium, color = AgedIvory)
+                        Text("Precio: ${offer.costSummary}", style = MaterialTheme.typography.bodyMedium, color = AmberWarning)
+                        Text("Beneficio: ${offer.rewardSummary}", style = MaterialTheme.typography.bodyMedium, color = MutedMoss)
+                        Text(offer.riskHint, style = MaterialTheme.typography.labelSmall, color = ParchmentDark)
                     }
-                    Text(if (needsRepair) "2 ●" else "Intacto", style = MaterialTheme.typography.labelLarge, color = TarnishedBrass)
                 }
             }
 
             Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ToyboxPlaqueButton(text = "Cerrar", onClick = onClose, modifier = Modifier.weight(1f))
-                ToyboxPlaqueButton(
-                    text = "Reparar Todo (5 ●)",
-                    primary = true,
-                    enabled = state.buttons >= 5,
-                    onClick = { onRepairZone(null) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            ToyboxPlaqueButton(
+                text = "Rechazar Oferta",
+                icon = Icons.Default.Close,
+                onClick = { onSelectOffer(null) },
+                modifier = Modifier.fillMaxWidth(),
+                testTag = "manufacturer_reject_btn"
+            )
         }
     }
 }

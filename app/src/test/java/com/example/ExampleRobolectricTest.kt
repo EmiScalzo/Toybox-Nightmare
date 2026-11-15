@@ -7,6 +7,9 @@ import com.example.data.model.CharacterId
 import com.example.data.model.CompanionId
 import com.example.data.model.ConsumableType
 import com.example.data.model.EnemyType
+import com.example.data.model.InteractableType
+import com.example.data.model.RepairMaterial
+import com.example.data.model.SecretClueType
 import com.example.ui.components.PixelArtSprites
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -28,7 +31,7 @@ class ExampleRobolectricTest {
 
   @Test
   fun `all pixel art sprites and object icons render with valid dimensions`() {
-    assertEquals(27, EnemyType.entries.size)
+    assertEquals(31, EnemyType.entries.size)
     EnemyType.entries.forEach { enemy ->
       val bmp = PixelArtSprites.forEnemy(enemy, disguised = false)
       assertTrue("${enemy.name} invalid size", bmp.width >= 12 && bmp.height >= 10)
@@ -76,5 +79,28 @@ class ExampleRobolectricTest {
     assertTrue(PixelArtSprites.scissorsProp().width >= 12)
     assertTrue(PixelArtSprites.nurseryBlockObstacle().width >= 12)
     assertTrue(PixelArtSprites.companionBellProp().width >= 10)
+    assertTrue(PixelArtSprites.manufacturerNpc().width >= 12)
+
+    assertEquals(23, InteractableType.entries.size)
+    InteractableType.entries.forEach { inter ->
+      val bmp = PixelArtSprites.forInteractable(inter, active = true, destroyed = false)
+      assertTrue("${inter.name} invalid size", bmp.width >= 10 && bmp.height >= 5)
+    }
+
+    assertEquals(5, SecretClueType.entries.size)
+    SecretClueType.entries.forEach { clue ->
+      val bmp = PixelArtSprites.forSecretClue(clue)
+      assertTrue("${clue.name} invalid size", bmp.width >= 10 && bmp.height >= 6)
+    }
+
+    assertEquals(7, RepairMaterial.entries.size)
+    RepairMaterial.entries.forEach { mat ->
+      val bmp = PixelArtSprites.forMaterial(mat)
+      assertTrue("${mat.name} invalid size", bmp.width >= 8 && bmp.height >= 6)
+    }
+
+    listOf("crying_box", "delivery_box", "gear_token", "alarm_bell").forEach { kind ->
+      assertTrue("$kind invalid size", PixelArtSprites.forObjectiveProp(kind).width >= 10)
+    }
   }
 }

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -8,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -269,10 +272,17 @@ private val tutorialPages = listOf(
     ),
     TutorialPage(
         title = "6. Sinergias y Memoria Viva",
-        badge = "SECRETOS",
+        badge = "SISTEMAS",
         icon = Icons.Default.AutoAwesome,
         body = "Combinar piezas y objetos con etiquetas afines (ej. Resorte + Precisión, Payaso + Resorte, Música + Ojo Rojo) desbloquea SINERGIAS poderosas.\n\nAdemás, «La Juguetería Recuerda» tus tácticas y tus elecciones en eventos.",
         tip = "Consejo: Explora las salas con signo de tesoro (★), tienda ($) y evento (!), y busca el Jefe (♛) para bajar al siguiente piso."
+    ),
+    TutorialPage(
+        title = "7. Entorno, Secretos y El Fabricante",
+        badge = "MECÁNICAS AVANZADAS",
+        icon = Icons.Default.PrecisionManufacturing,
+        body = "Pulsa INTERACTUAR junto a trenes, palancas, carruseles, anomalías secretas (cuadros torcidos, relojes, paredes con golpes) o El Fabricante.\n\nAlgunas salas tienen OBJETIVOS ALTERNATIVOS, los enemigos siguen roles tácticos y en la Mesa de Costura podrás jugar minijuegos para reparar, reforzar o modificar piezas.",
+        tip = "Consejo: Observa cuadros torcidos y muñecas que miran la pared vacía para abrir pasadizos ocultos sin gastar bombas."
     )
 )
 
@@ -285,11 +295,18 @@ fun TutorialOverlayDialog(
     onClose: () -> Unit
 ) {
     AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
+        BackHandler(enabled = visible) {
+            if (step > 0) onPrev() else onClose()
+        }
         val page = tutorialPages[step.coerceIn(0, tutorialPages.lastIndex)]
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(CharcoalBlack.copy(alpha = 0.86f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {}
                 .padding(20.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -364,14 +381,19 @@ fun TutorialOverlayDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     OutlinedButton(
-                        onClick = onPrev,
-                        enabled = step > 0,
+                        onClick = { if (step > 0) onPrev() else onClose() },
                         border = BorderStroke(1.dp, TarnishedBrassDim),
-                        modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("tutorial_prev_button")
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = AgedIvory)
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = if (step > 0) "Atrás" else "Cerrar",
+                            tint = AgedIvory
+                        )
                         Spacer(Modifier.width(6.dp))
-                        Text("ATRÁS", color = AgedIvory)
+                        Text(if (step > 0) "ATRÁS" else "CERRAR", color = AgedIvory)
                     }
 
                     ToyboxPlaqueButton(

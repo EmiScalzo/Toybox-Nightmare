@@ -59,6 +59,14 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
     private val _tutorialStep = MutableStateFlow(0)
     val tutorialStep: StateFlow<Int> = _tutorialStep.asStateFlow()
 
+    private val _showLore = MutableStateFlow(false)
+    val showLore: StateFlow<Boolean> = _showLore.asStateFlow()
+
+    private val _loreStep = MutableStateFlow(0)
+    val loreStep: StateFlow<Int> = _loreStep.asStateFlow()
+
+    private var checkedInitialLore = false
+
     private val _newlyUnlockedAchievements = MutableStateFlow<List<AchievementDef>>(emptyList())
     val newlyUnlockedAchievements: StateFlow<List<AchievementDef>> = _newlyUnlockedAchievements.asStateFlow()
 
@@ -102,6 +110,9 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
         },
         onClearCompanionGrudge = { compId ->
             viewModelScope.launch { repository.clearCompanionGrudge(compId) }
+        },
+        onManufacturerTrust = { accepted ->
+            viewModelScope.launch { repository.recordManufacturerDecision(accepted) }
         }
     )
 
@@ -111,6 +122,13 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
             repository.profileFlow.collect { p ->
                 sfx.enabled = p.soundEnabled
                 ost.enabled = p.musicEnabled
+                if (!checkedInitialLore) {
+                    checkedInitialLore = true
+                    if (!p.loreSeen) {
+                        _loreStep.value = 0
+                        _showLore.value = true
+                    }
+                }
             }
         }
         viewModelScope.launch {
@@ -181,6 +199,28 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
         _showTutorial.value = false
         _runState.update { it?.copy(isPaused = false) }
         viewModelScope.launch { repository.markTutorialCompleted() }
+    }
+
+    fun openLore() {
+        _loreStep.value = 0
+        _showLore.value = true
+    }
+
+    fun nextLoreStep(totalSteps: Int = 4) {
+        if (_loreStep.value + 1 >= totalSteps) {
+            closeLore()
+        } else {
+            _loreStep.value += 1
+        }
+    }
+
+    fun prevLoreStep() {
+        _loreStep.value = (_loreStep.value - 1).coerceAtLeast(0)
+    }
+
+    fun closeLore() {
+        _showLore.value = false
+        viewModelScope.launch { repository.markLoreSeen() }
     }
 
     // Run Setup Controls
@@ -322,6 +362,26 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resolveCompanionDialog(optionId: String) {
         _runState.update { st -> st?.let { engine.resolveCompanionDialog(it, optionId) } }
+    }
+
+    fun interact() {
+        _runState.update { st -> st?.let { engine.interactNearby(it) } }
+    }
+
+    fun abandonObjective() {
+        _runState.update { st -> st?.let { engine.abandonRoomObjective(it) } }
+    }
+
+    fun startRepairMinigame(zone: BodyZone, mode: RepairActionMode) {
+        _runState.update { st -> st?.let { engine.openRepairMinigame(it, zone, mode) } }
+    }
+
+    fun handleRepairMinigameAction(action: String) {
+        _runState.update { st -> st?.let { engine.handleRepairMinigameAction(it, action) } }
+    }
+
+    fun resolveManufacturerOffer(offerId: String?) {
+        _runState.update { st -> st?.let { engine.resolveManufacturerOffer(it, offerId) } }
     }
 
     fun abandonRun() {

@@ -1,4 +1,4 @@
-name: Build Toybox Nightmare APK
+name: Build Toybox Nightmare v1.1
 
 on:
   push:
@@ -45,9 +45,12 @@ jobs:
       - name: Build Debug APK
         run: gradle :app:assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true -Dfile.encoding=UTF-8"
 
+      - name: Rename APK with version
+        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/ToyboxNightmare-v1.1-${{ github.run_number }}.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ToyboxNightmare-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ToyboxNightmare-v1.1-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/ToyboxNightmare-v1.1-${{ github.run_number }}.apk
           if-no-files-found: error

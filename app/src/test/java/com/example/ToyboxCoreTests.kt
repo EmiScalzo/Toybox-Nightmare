@@ -7,9 +7,22 @@ import com.example.data.model.BodyZone
 import com.example.data.model.CharacterId
 import com.example.data.model.CompanionId
 import com.example.data.model.Difficulty
+import com.example.data.model.EnemyFaction
+import com.example.data.model.EnemyRole
+import com.example.data.model.EnemyType
 import com.example.data.model.EquippedBodyPart
+import com.example.data.model.InteractableCategory
+import com.example.data.model.InteractableType
+import com.example.data.model.ManufacturerDealCategory
+import com.example.data.model.ManufacturerOffer
+import com.example.data.model.ObjectiveType
+import com.example.data.model.RepairActionMode
+import com.example.data.model.RepairMinigameType
 import com.example.data.model.RoomMechanic
 import com.example.data.model.RoomType
+import com.example.data.model.SecretClueType
+import com.example.data.model.SecretRoomFlavor
+import com.example.data.model.Direction
 import com.example.engine.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -247,5 +260,115 @@ class ToyboxCoreTests {
                 }
             }
         }
+    }
+
+    @Test
+    fun expandedSixMechanicsInteractablesObjectivesRelationshipsSecretsRepairsAndManufacturerWork() {
+        val sfx = SoundEffectsEngine().apply { enabled = false }
+        val engine = GameEngine(sfx = sfx, onDiscovery = { _, _ -> }, onAchievement = { })
+        val base = engine.createNewRun(GameCatalog.characterById(CharacterId.PATCH), Difficulty.NORMAL, emptyList())
+        var nid = 9000L
+
+        // 1) Interactables: activate electric train & verify active state + nearby prompt
+        val train = RoomInteractable(id = 101L, type = InteractableType.ELECTRIC_TRAIN, x = 500f, y = 500f)
+        val trainState = base.copy(playerX = 510f, playerY = 510f, roomInteractables = listOf(train))
+        assertNotNull(InteractablesSystem.findNearbyInteractablePrompt(trainState))
+        val activatedTrain = InteractablesSystem.activateInteractable(trainState, 101L, { nid++ }, sfx) { _, _ -> }
+        assertTrue(activatedTrain.roomInteractables.first().active)
+
+        // 2) Alternative Room Objective: SURVIVE_TIME completes when timer reaches 0, WIND_THREE_MECHANISMS winds 3
+        val surviveObj = RoomObjectiveState(type = ObjectiveType.SURVIVE_TIME, timerSec = 0.05f, maxTimerSec = 15f)
+        val afterSurvive = RoomObjectiveSystem.stepObjective(base.copy(roomObjective = surviveObj), 0.1f, { it }, { nid++ }, sfx)
+        assertTrue(afterSurvive.roomObjective?.completed == true)
+
+        val windObj = RoomObjectiveState(
+            type = ObjectiveType.WIND_THREE_MECHANISMS,
+            targetCount = 3,
+            windupPositions = listOf(500f to 500f, 300f to 300f, 700f to 300f)
+        )
+        val (handledWind, woundOnce) = RoomObjectiveSystem.tryInteractObjective(
+            base.copy(playerX = 505f, playerY = 505f, roomObjective = windObj),
+            { nid++ },
+            sfx
+        )
+        assertTrue(handledWind)
+        assertEquals(1, woundOnce.roomObjective?.currentCount)
+
+        // 3) Enemy Relationships: Captain death disorganizes Tin Soldiers
+        val captain = ActiveEnemy(id = 1L, type = EnemyType.TIN_CAPTAIN, x = 400f, y = 400f, hp = 50f, maxHp = 50f, radius = 22f, role = EnemyRole.LEADER, faction = EnemyFaction.TIN_ARMY)
+        val soldier = ActiveEnemy(id = 2L, type = EnemyType.TIN_SOLDIER, x = 450f, y = 400f, hp = 28f, maxHp = 28f, radius = 20f, role = EnemyRole.STANDARD, faction = EnemyFaction.TIN_ARMY)
+        val (relInited, _) = EnemyRelationshipSystem.initializeRoomRelationships(listOf(captain, soldier), hasBell = false, defeatedCaptainsCount = 0)
+        assertEquals(EnemyRole.LEADER, relInited[0].role)
+        val afterCaptainDeath = EnemyRelationshipSystem.onEnemyKilledRelationships(base.copy(enemies = relInited), relInited[0])
+        assertTrue(afterCaptainDeath.enemies.first { it.id == 2L }.disorganized)
+        assertEquals(1, afterCaptainDeath.defeatedCaptainsCount)
+
+        // 4) Physical Secret Discovery: Crooked Frame reveals secret doors, Wrong Shadow resolves on movable push
+        val secretDir = Direction.NORTH
+        val roomWithSecret = base.currentRoom.copy(secretDoors = setOf(secretDir))
+        val anom = RoomAnomaly(id = 50L, clueType = SecretClueType.CROOKED_FRAME, x = 500f, y = 120f, targetFlavor = SecretRoomFlavor.HIDDEN_TREASURE)
+        val revealed = SecretDiscoverySystem.interactWithAnomaly(
+            base.copy(currentRoom = roomWithSecret, roomAnomalies = listOf(anom), playerX = 500f, playerY = 140f),
+            50L, { nid++ }, sfx
+        ) { _, _ -> }
+        assertTrue(secretDir in revealed.currentRoom.doors)
+        assertTrue(revealed.currentRoom.secretDoors.isEmpty())
+
+        val shadowAnom = RoomAnomaly(id = 51L, clueType = SecretClueType.WRONG_SHADOW_PROP, x = 300f, y = 300f, targetFlavor = SecretRoomFlavor.MEMORY_VAULT)
+        val blockOnShadow = RoomInteractable(id = 52L, type = InteractableType.WOOD_BLOCK, x = 305f, y = 305f)
+        val shadowResolved = SecretDiscoverySystem.stepAnomalies(
+            base.copy(roomAnomalies = listOf(shadowAnom), roomInteractables = listOf(blockOnShadow)),
+            { nid++ }, sfx
+        ) { _, _ -> }
+        assertTrue(shadowResolved.roomAnomalies.first().resolved)
+
+        // 5) Repair Minigame: SEWING sequence + REINFORCE grants 3 reinforced rooms
+        val damagedPart = EquippedBodyPart(GameCatalog.partById("button_torso"), durability = 40)
+        val repStart = RepairMinigameSystem.startMinigame(
+            base.copy(
+                buttons = 5,
+                equippedParts = base.equippedParts + (BodyZone.TORSO to damagedPart)
+            ),
+            BodyZone.TORSO,
+            RepairActionMode.REINFORCE
+        )
+        assertEquals(RepairMinigameType.SEWING, repStart.pendingRepairMinigame?.minigameType)
+        var mgState = repStart
+        for (step in 1..4) {
+            mgState = RepairMinigameSystem.handleAction(mgState, "sew_tap:$step", sfx)
+        }
+        assertNull(mgState.pendingRepairMinigame)
+        assertTrue((mgState.equippedParts[BodyZone.TORSO]?.durability ?: 0) > 40)
+        assertEquals(3, mgState.partReinforcedRooms[BodyZone.TORSO])
+
+        // 6) El Fabricante & La Caja Cerrada across 3 rooms
+        val boxOffer = ManufacturerOffer(
+            id = "offer_closed_box",
+            title = "La Caja Cerrada",
+            category = ManufacturerDealCategory.WORLD_ALTER,
+            costSummary = "2",
+            rewardSummary = "Misterio",
+            riskHint = "Riesgo",
+            worldEffectId = "closed_mystery_box",
+            buttonsCost = 2
+        )
+        val enc = ManufacturerSystem.resolveOffer(
+            state = base.copy(
+                buttons = 5,
+                manufacturerEncounter = com.example.data.model.ManufacturerEncounter("El Fabricante", "Hola", false, listOf(boxOffer))
+            ),
+            offerId = "offer_closed_box",
+            sfx = sfx,
+            onDiscovery = { _, _ -> },
+            acquireItemFn = { st, _ -> st },
+            onRecordTrust = {}
+        )
+        assertEquals(3, enc.closedMysteryBoxTimer)
+        var boxTick = enc
+        repeat(3) {
+            boxTick = ManufacturerSystem.tickClosedMysteryBoxOnRoomEnter(boxTick, { nid++ }, sfx)
+        }
+        assertEquals(0, boxTick.closedMysteryBoxTimer)
+        assertTrue(boxTick.pickups.size > enc.pickups.size || boxTick.enemies.size > enc.enemies.size)
     }
 }

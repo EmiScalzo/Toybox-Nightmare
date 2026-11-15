@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BodyZone
 import com.example.data.model.CompanionId
+import com.example.data.model.ObjectiveType
+import com.example.data.model.RepairActionMode
 import com.example.data.model.RoomMechanic
 import com.example.data.model.WearState
 import com.example.engine.*
@@ -53,6 +55,8 @@ fun GameScreen(
     onAbility: () -> Unit,
     onUseConsumable: () -> Unit,
     onCycleConsumable: () -> Unit,
+    onInteract: () -> Unit,
+    onAbandonObjective: () -> Unit,
     onTogglePause: (Boolean) -> Unit,
     onOpenTutorial: () -> Unit,
     onResolvePartChoice: (Boolean) -> Unit,
@@ -60,10 +64,13 @@ fun GameScreen(
     onPurchaseShopOffer: (String) -> Unit,
     onCloseShop: () -> Unit,
     onRepairAtBench: (BodyZone?) -> Unit,
+    onStartRepairMinigame: (BodyZone, RepairActionMode) -> Unit,
+    onRepairMinigameAction: (String) -> Unit,
     onCloseRepairBench: () -> Unit,
     onReopenFacility: () -> Unit,
     onInspectCompanion: (CompanionId) -> Unit,
     onResolveCompanionDialog: (String) -> Unit,
+    onResolveManufacturerOffer: (String?) -> Unit,
     onAbandonRun: () -> Unit
 ) {
     var pauseTab by remember { mutableStateOf(0) } // 0 = Menu/Stats, 1 = Body/Synergies, 2 = Toybox Memory, 3 = Map
@@ -200,32 +207,94 @@ fun GameScreen(
                     }
                 }
 
-                // Dynamic Room Mechanic Pill (top-right of arena)
-                if (state.currentRoom.mechanic != RoomMechanic.NONE) {
-                    Box(
+                // Dynamic Room Mechanic Pill & Closed Mystery Box badge (top-right of arena)
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 8.dp, top = 8.dp),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (state.currentRoom.mechanic != RoomMechanic.NONE) {
+                        Box(
+                            modifier = Modifier
+                                .background(CharcoalBlack.copy(alpha = 0.78f), CutCornerShape(4.dp))
+                                .border(1.dp, TarnishedBrassDim, CutCornerShape(4.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = state.currentRoom.mechanic.displayName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TarnishedBrass,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    if (state.closedMysteryBoxTimer > 0) {
+                        Box(
+                            modifier = Modifier
+                                .background(CharcoalBlack.copy(alpha = 0.82f), CutCornerShape(4.dp))
+                                .border(1.dp, CrimsonBright, CutCornerShape(4.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Caja Cerrada: ${state.closedMysteryBoxTimer} salas",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AgedIvory
+                            )
+                        }
+                    }
+                }
+
+                // Alternative Room Objective HUD Pill (top-center when active & no boss bar)
+                val obj = state.roomObjective
+                if (obj != null && !obj.completed && !obj.failed && activeBoss == null) {
+                    val statusText = when {
+                        obj.maxTimerSec > 0f -> "${obj.timerSec.toInt()}s"
+                        obj.type == ObjectiveType.ESCORT_PACKAGE -> "HP ${obj.entityHp.toInt()}"
+                        else -> "${obj.currentCount}/${obj.targetCount}"
+                    }
+                    Row(
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(end = 8.dp, top = 8.dp)
-                            .background(CharcoalBlack.copy(alpha = 0.78f), CutCornerShape(4.dp))
-                            .border(1.dp, TarnishedBrassDim, CutCornerShape(4.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp, start = 58.dp, end = 58.dp)
+                            .background(CharcoalBlack.copy(alpha = 0.84f), CutCornerShape(5.dp))
+                            .border(1.2.dp, TarnishedBrass, CutCornerShape(5.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = state.currentRoom.mechanic.displayName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TarnishedBrass,
-                            maxLines = 1
-                        )
+                        Icon(Icons.Default.Flag, contentDescription = null, tint = TarnishedBrass, modifier = Modifier.size(14.dp))
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Text(
+                                text = "${obj.type.displayName} • $statusText",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = AgedIvory,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (obj.canAbandon) {
+                            IconButton(
+                                onClick = onAbandonObjective,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .testTag("btn_abandon_objective")
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Abandonar objetivo", tint = ParchmentDark, modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
 
                 // Dynamic Toast Banner (Synergy, Floor, Toybox Memory, Loot)
                 state.activeBanner?.let { banner ->
+                    val hasTopPill = activeBoss != null || state.activeCompanions.isNotEmpty() || (obj != null && !obj.completed && !obj.failed)
                     Column(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .padding(
-                                top = if (activeBoss != null) 54.dp else if (state.activeCompanions.isNotEmpty()) 58.dp else 10.dp,
+                                top = if (hasTopPill) 58.dp else 10.dp,
                                 start = 20.dp,
                                 end = 20.dp
                             )
@@ -247,19 +316,48 @@ fun GameScreen(
                     }
                 }
 
-                // Interactive room re-open buttons when inside cleared shop/repair room
-                if (state.currentRoom.type.name == "SHOP" && !state.shopOpen) {
-                    FloatingRoomChip(
-                        text = "ABRIR PUESTO ($)",
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(10.dp),
-                        onClick = onReopenFacility
-                    )
-                } else if (state.currentRoom.type.name == "REPAIR" && !state.repairBenchOpen) {
-                    FloatingRoomChip(
-                        text = "USAR MESA DE COSTURA (✂)",
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(10.dp),
-                        onClick = onReopenFacility
-                    )
+                // Bottom-center contextual action buttons: INTERACTUAR + Room Facility chips
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    state.interactionPrompt?.let { prompt ->
+                        Box(
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 140.dp, minHeight = 48.dp)
+                                .clip(CutCornerShape(6.dp))
+                                .background(CrimsonBlood)
+                                .border(1.5.dp, TarnishedBrass, CutCornerShape(6.dp))
+                                .testTag("btn_interact")
+                                .clickable(onClick = onInteract)
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.TouchApp, contentDescription = prompt, tint = TarnishedBrass, modifier = Modifier.size(18.dp))
+                                Text(
+                                    text = "INTERACTUAR: ${prompt.uppercase()}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = AgedIvory
+                                )
+                            }
+                        }
+                    }
+
+                    if (state.currentRoom.type.name == "SHOP" && !state.shopOpen) {
+                        FloatingRoomChip(
+                            text = "ABRIR PUESTO ($)",
+                            onClick = onReopenFacility
+                        )
+                    } else if (state.currentRoom.type.name == "REPAIR" && !state.repairBenchOpen) {
+                        FloatingRoomChip(
+                            text = "USAR MESA DE COSTURA (✂)",
+                            onClick = onReopenFacility
+                        )
+                    }
                 }
             }
 
@@ -305,7 +403,24 @@ fun GameScreen(
             RepairBenchDialog(
                 state = state,
                 onRepairZone = onRepairAtBench,
+                onStartRepairMinigame = onStartRepairMinigame,
                 onClose = onCloseRepairBench
+            )
+        }
+
+        if (state.pendingRepairMinigame != null) {
+            RepairMinigameDialog(
+                minigame = state.pendingRepairMinigame,
+                currentButtons = state.buttons,
+                onAction = onRepairMinigameAction
+            )
+        }
+
+        if (state.manufacturerEncounter != null) {
+            ManufacturerDialog(
+                encounter = state.manufacturerEncounter,
+                currentButtons = state.buttons,
+                onSelectOffer = onResolveManufacturerOffer
             )
         }
 
@@ -499,6 +614,8 @@ private fun MiniMapCanvas(state: GameRunState, modifier: Modifier = Modifier) {
                     r.type.name == "BOSS" -> CrimsonBright
                     r.type.name == "TREASURE" -> Color(0xFFD9C05B)
                     r.type.name == "SHOP" -> MutedMoss
+                    r.type.name == "MANUFACTURER" -> Color(0xFFB388EB)
+                    r.type.name == "FORBIDDEN" -> CrimsonBlood
                     r.visited -> AgedIvory.copy(alpha = 0.7f)
                     else -> AgedWoodLight.copy(alpha = 0.5f)
                 }

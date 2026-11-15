@@ -20,7 +20,8 @@ class GameEngine(
     private val onDiscovery: (category: String, id: String) -> Unit,
     private val onAchievement: (id: String) -> Unit,
     private val onCompanionGrudge: (String) -> Unit = {},
-    private val onClearCompanionGrudge: (String) -> Unit = {}
+    private val onClearCompanionGrudge: (String) -> Unit = {},
+    private val onManufacturerTrust: (Boolean) -> Unit = {}
 ) {
     private var nextEntityId = 1L
     private fun allocId(): Long = nextEntityId++
@@ -105,9 +106,12 @@ class GameEngine(
     }
 
     fun step(state: GameRunState, input: EngineInput, dtRaw: Float): GameRunState {
+        if (state.pendingRepairMinigame != null) {
+            return RepairMinigameSystem.tickSpringMinigame(state, dtRaw.coerceIn(0.001f, 0.05f))
+        }
         if (!state.isActive || state.isPaused || state.isGameOver || state.isVictory ||
             state.activeEvent != null || state.pendingPartChoice != null ||
-            state.pendingCompanionDialog != null ||
+            state.pendingCompanionDialog != null || state.manufacturerEncounter != null ||
             state.shopOpen || state.repairBenchOpen
         ) {
             return state
@@ -142,14 +146,24 @@ class GameEngine(
         // Dynamic Room Mechanics (Tilt, Vanishing Floor, Shifting Doors, Blackout, Carousel)
         s = RoomMechanicSystem.stepMechanics(s, dt, ::damagePlayer)
 
+        // Interactive Environment Toys & Traps
+        s = InteractablesSystem.stepInteractables(s, dt, ::damagePlayer, ::allocId, sfx, onDiscovery)
+
         // Manual Aim & Shoot
         s = updatePlayerShooting(s, input, dt)
 
         // Update Bombs
         s = updateBombs(s, dt)
 
-        // Update Enemies & AI
+        // Update Enemies, AI & Enemy Relationships
         s = updateEnemies(s, dt)
+        s = EnemyRelationshipSystem.stepRelationships(s, dt, ::allocId)
+
+        // Update Alternative Room Objectives
+        s = RoomObjectiveSystem.stepObjective(s, dt, ::damagePlayer, ::allocId, sfx)
+
+        // Check Physical Secret Anomalies
+        s = SecretDiscoverySystem.stepAnomalies(s, ::allocId, sfx, onDiscovery)
 
         // Update Conditional Companions
         s = CompanionSystem.updateCompanions(s, dt, ::allocId, sfx)
@@ -159,6 +173,9 @@ class GameEngine(
 
         // Update Pickups & Decoys & Particles
         s = updatePickupsAndFx(s, dt)
+
+        // Update Contextual Interact Prompt
+        s = s.copy(interactionPrompt = computeInteractionPrompt(s))
 
         // Check Room Clear & Door Transitions
         s = checkRoomStateAndDoors(s)
@@ -475,7 +492,7 @@ class GameEngine(
                 pierceLeft = if (isPierce) 1 else 0,
                 bouncesLeft = if (isBounce) 1 + extraBounces else 0,
                 homing = isHoming,
-                explosive = attackStyle == AttackStyle.EXPLOSIVE_TOY
+                explosive = attackStyle == AttackStyle.EXPLOSIVE_TOY || state.modifiedArmExplosiveGears
             )
         }
 
@@ -810,6 +827,8 @@ class GameEngine(
                     disorientTimer = disorient,
                     particles = s.particles + spawnRingParticles(b.x, b.y, b.radius * 0.7f, 0xFFD13B42)
                 )
+                s = InteractablesSystem.onExplosionInteractables(s, b.x, b.y, b.radius, ::allocId, sfx)
+                s = SecretDiscoverySystem.onExplosionNearAnomaly(s, b.x, b.y, b.radius, ::allocId, sfx, onDiscovery)
                 s = CompanionSystem.onExplosionNearCompanions(s, b.x, b.y)
             } else {
                 remaining.add(b.copy(fuseSec = nf))
@@ -871,9 +890,11 @@ class GameEngine(
                         telegraphTimer = 0.25f
                     )
                     if (pd < 24f) {
+                        enemy = enemy.copy(carriedPart = droppedPart.detachedPart)
                         s = s.copy(
                             pickups = s.pickups.filterNot { it.id == droppedPart.id },
-                            activeBanner = RunUiBanner("¡Pieza Robada!", "Un duende huyó con tu pieza caída.", 0xFFD13B42, 2.2f)
+                            activeBanner = RunUiBanner("¡Pieza Robada!", "El duende robó tu ${droppedPart.detachedPart?.def?.name ?: "pieza"}. ¡Derrótalo!", 0xFFD13B42, 2.5f),
+                            recentEngineEvents = (s.recentEngineEvents + EngineEventType.ENEMY_STOLE_PART.key).takeLast(12)
                         )
                     }
                     nextEnemies.add(enemy)
@@ -1218,6 +1239,68 @@ class GameEngine(
                     }
                 }
 
+                EnemyType.TIN_CAPTAIN -> {
+                    val moveFactor = if (dist > 250f) 0.9f else if (dist < 150f) -0.5f else 0.1f
+                    enemy = enemy.copy(
+                        x = enemy.x + dirX * moveSpeed * moveFactor * dt,
+                        y = enemy.y + dirY * moveSpeed * moveFactor * dt,
+                        attackTimer = enemy.attackTimer - dt
+                    )
+                    if (enemy.attackTimer <= 0f) {
+                        val baseAng = computeAimAngle(enemy.x, enemy.y, s, 325f * bulletSlowMult)
+                        for (i in -1..1) {
+                            val a = baseAng + i * 0.16f
+                            newEnemyProjs.add(
+                                ActiveProjectile(
+                                    id = allocId(), x = enemy.x, y = enemy.y,
+                                    vx = cos(a) * 325f * bulletSlowMult,
+                                    vy = sin(a) * 325f * bulletSlowMult,
+                                    radius = 9.5f, damage = 1f, fromPlayer = false, colorHex = 0xFFE5A93B
+                                )
+                            )
+                        }
+                        enemy = enemy.copy(attackTimer = 1.95f / aggroMult)
+                    }
+                }
+
+                EnemyType.BODYGUARD_BEAR -> {
+                    val spdMult = if (enemy.enraged) 1.45f else 1.0f
+                    enemy = enemy.copy(
+                        x = enemy.x + dirX * moveSpeed * spdMult * dt,
+                        y = enemy.y + dirY * moveSpeed * spdMult * dt
+                    )
+                }
+
+                EnemyType.CLOCKWORK_COURIER -> {
+                    val awayX = if (s.alarmBellPos == null) -dirX else 0f
+                    val awayY = if (s.alarmBellPos == null) -dirY else 0f
+                    enemy = enemy.copy(
+                        x = enemy.x + awayX * moveSpeed * dt,
+                        y = enemy.y + awayY * moveSpeed * dt
+                    )
+                }
+
+                EnemyType.STITCH_MECHANIC -> {
+                    val factor = if (dist > 240f) 0.7f else -0.6f
+                    enemy = enemy.copy(
+                        x = enemy.x + dirX * moveSpeed * factor * dt,
+                        y = enemy.y + dirY * moveSpeed * factor * dt,
+                        attackTimer = enemy.attackTimer - dt
+                    )
+                    if (enemy.attackTimer <= 0f && s.enemies.size == 1) {
+                        val a = computeAimAngle(enemy.x, enemy.y, s, 310f * bulletSlowMult)
+                        newEnemyProjs.add(
+                            ActiveProjectile(
+                                id = allocId(), x = enemy.x, y = enemy.y,
+                                vx = cos(a) * 310f * bulletSlowMult,
+                                vy = sin(a) * 310f * bulletSlowMult,
+                                radius = 7.5f, damage = 1f, fromPlayer = false, colorHex = 0xFF597354
+                            )
+                        )
+                        enemy = enemy.copy(attackTimer = 2.0f)
+                    }
+                }
+
                 // BOSSES
                 else -> {
                     enemy = updateBossBehavior(enemy, dirX, dirY, dist, moveSpeed, bulletSlowMult, dt, newEnemyProjs, spawnedMinions, s)
@@ -1493,6 +1576,13 @@ class GameEngine(
 
             p = p.copy(x = nx, y = ny, vx = vx, vy = vy, bouncesLeft = bouncesLeft)
 
+            val (hitInteractable, nextInteractableState) = InteractablesSystem.applyProjectileToInteractables(s, p, ::allocId, sfx, onDiscovery)
+            s = nextInteractableState
+            if (hitInteractable) {
+                if (p.explosive) s = triggerMiniExplosion(s, p.x, p.y, p.damage * 0.7f)
+                continue
+            }
+
             if (p.fromPlayer) {
                 var consumed = false
                 val shortRangeBonus = if (s.activeDefects.any { it.effects.shortRangeBonusDamage }) 1.22f else 1f
@@ -1576,9 +1666,10 @@ class GameEngine(
             val candidates = updatedParts.values.filter { !it.isDetached }
             if (candidates.isNotEmpty()) {
                 val target = candidates.random()
-                val wearMult = state.activeDefects.fold(1f) { acc, d -> acc * d.effects.wearRateMult }
+                val reinforced = (state.partReinforcedRooms[target.def.zone] ?: 0) > 0
+                val wearMult = state.activeDefects.fold(1f) { acc, d -> acc * d.effects.wearRateMult } * (if (reinforced) 0.45f else 1f)
                 val wearDamage = (Random.nextInt(16, 28) * wearMult).toInt()
-                if (target.wearState == WearState.CRITICAL && Random.nextFloat() < 0.65f) {
+                if (!reinforced && target.wearState == WearState.CRITICAL && Random.nextFloat() < 0.65f) {
                     // DETACH PART onto floor!
                     val detached = target.copy(isDetached = true, durability = 10)
                     val mut = updatedParts.toMutableMap()
@@ -1700,7 +1791,12 @@ class GameEngine(
                 pickups.add(GroundPickup(allocId(), PickupKind.CONSUMABLE, dx, dy, valueStr = cons.name))
             }
         }
-        return s.copy(pickups = pickups)
+        s = EnemyRelationshipSystem.onEnemyKilledRelationships(s, enemy)
+        var npc = s.manufacturerNpc
+        if (enemy.type.isBoss && Random.nextFloat() < 0.42f) {
+            npc = ManufacturerNpcState(x = ARENA_W * 0.78f, y = ARENA_H * 0.28f, present = true)
+        }
+        return s.copy(pickups = pickups, manufacturerNpc = npc)
     }
 
     private fun updatePickupsAndFx(state: GameRunState, dt: Float): GameRunState {
@@ -1781,6 +1877,35 @@ class GameEngine(
                             s = s.copy(
                                 pendingCompanionDialog = CompanionSystem.buildShrineDialog(cid, s.activeCompanions)
                             )
+                        }
+                    }
+                    PickupKind.MATERIAL -> {
+                        val mat = runCatching { RepairMaterial.valueOf(updated.valueStr) }.getOrNull()
+                        if (mat != null) {
+                            sfx.play(ToySfx.PICKUP_ITEM)
+                            onDiscovery("material", mat.name)
+                            val matMap = s.materials.toMutableMap()
+                            matMap[mat] = (matMap[mat] ?: 0) + updated.amount
+                            s = s.copy(
+                                materials = matMap,
+                                activeBanner = RunUiBanner("Material de Taller", "+${updated.amount} ${mat.displayName}", 0xFF597354, 1.8f)
+                            )
+                        }
+                    }
+                    PickupKind.GEAR_TOKEN -> {
+                        sfx.play(ToySfx.PICKUP_BUTTON)
+                        val obj = s.roomObjective
+                        if (obj != null && obj.type == ObjectiveType.RECOVER_GEARS && !obj.completed) {
+                            val nextCount = obj.currentCount + 1
+                            val updatedObj = obj.copy(currentCount = nextCount)
+                            s = if (nextCount >= updatedObj.targetCount) {
+                                RoomObjectiveSystem.completeObjective(s, updatedObj, ::allocId, sfx)
+                            } else {
+                                s.copy(
+                                    roomObjective = updatedObj,
+                                    activeBanner = RunUiBanner("Engranaje Recogido", "$nextCount/${updatedObj.targetCount}", 0xFFC89948, 1.6f)
+                                )
+                            }
                         }
                     }
                 }
@@ -2107,6 +2232,10 @@ class GameEngine(
             activeEvent = activeEvent,
             shopOpen = shopOpen,
             repairBenchOpen = repairOpen,
+            pendingRepairMinigame = null,
+            manufacturerEncounter = null,
+            interactionPrompt = null,
+            partReinforcedRooms = s.partReinforcedRooms.mapValues { (_, rem) -> (rem - 1).coerceAtLeast(0) }.filterValues { it > 0 },
             lightFlashTimer = lightFlash,
             damagedInPrevRoom = s.damagedInCurrentRoom,
             damagedInCurrentRoom = false,
@@ -2115,11 +2244,54 @@ class GameEngine(
             activeBanner = when (updatedRoom.type) {
                 RoomType.BOSS -> RunUiBanner("JEFE DEL PISO", ToyboxMemorySystem.bossDialogueFor(activeBossType, s.toyboxMemory), 0xFFD13B42, 3.4f)
                 RoomType.TREASURE -> RunUiBanner("Sala de Tesoro", "Piezas y reliquias olvidadas", 0xFFC89948, 2.4f)
-                RoomType.SECRET -> RunUiBanner("Sala Secreta", "Un escondite detrás de los estantes", 0xFFC89948, 2.6f)
-                RoomType.REPAIR -> RunUiBanner("Mesa de Costura", "Hilo tibio y lámpara de taller", 0xFF597354, 2.2f)
+                RoomType.SECRET -> RunUiBanner(
+                    updatedRoom.secretFlavor?.displayName ?: "Sala Secreta",
+                    updatedRoom.secretFlavor?.subtitle ?: "Un escondite detrás de los estantes",
+                    0xFFC89948,
+                    2.6f
+                )
+                RoomType.REPAIR -> RunUiBanner("Mesa de Costura", "Hilo tibio y taller interactivo", 0xFF597354, 2.2f)
+                RoomType.MANUFACTURER -> RunUiBanner("Sala del Fabricante", "Acércate a la figura enmascarada para negociar.", 0xFFC89948, 2.8f)
+                RoomType.FORBIDDEN -> RunUiBanner("Sala Prohibida", "Peligro alto y recompensas oscuras", 0xFFD13B42, 2.6f)
                 else -> mechanicBanner ?: s.activeBanner
             }
         )
+
+        // Expanded Mechanics room setup
+        val objective = if (!wasVisited && !curRoomResolved.cleared) {
+            RoomObjectiveSystem.maybeGenerateObjective(curRoomResolved.type, curRoomResolved.mechanic, nextState.floorNumber)
+        } else null
+        val objPickups = RoomObjectiveSystem.initPickupsForObjective(objective, curRoomResolved.obstacles, ::allocId)
+        val interactables = InteractablesSystem.generateForRoom(curRoomResolved.type, nextState.floorNumber, curRoomResolved.obstacles, objective, ::allocId)
+        val anomalies = if (!wasVisited) SecretDiscoverySystem.generateAnomaliesForRoom(curRoomResolved, nextState.dungeon, ::allocId) else emptyList()
+        val (relEnemies, bellPos) = EnemyRelationshipSystem.initializeRoomRelationships(
+            nextState.enemies,
+            hasBell = curRoomResolved.type == RoomType.COMBAT && Random.nextFloat() < 0.25f,
+            defeatedCaptainsCount = nextState.defeatedCaptainsCount
+        )
+        val npcState = if (ManufacturerSystem.shouldSpawnNpcInRoom(curRoomResolved, nextState)) {
+            ManufacturerNpcState(x = ARENA_W * 0.5f, y = ARENA_H * 0.36f, present = true)
+        } else null
+
+        if (curRoomResolved.type == RoomType.SECRET && !wasVisited && curRoomResolved.secretFlavor == SecretRoomFlavor.FORBIDDEN_CHAMBER) {
+            val forbiddenItem = GameCatalog.passiveItems.filter { it.rarity == Rarity.CURSED || it.rarity == Rarity.RARE }.randomOrNull()
+            if (forbiddenItem != null) {
+                nextState = nextState.copy(
+                    pickups = nextState.pickups + GroundPickup(allocId(), PickupKind.PASSIVE_ITEM_PEDESTAL, ARENA_W * 0.5f, ARENA_H * 0.62f, valueStr = forbiddenItem.id)
+                )
+            }
+        }
+
+        nextState = nextState.copy(
+            enemies = relEnemies,
+            alarmBellPos = bellPos,
+            roomObjective = objective,
+            roomInteractables = interactables,
+            roomAnomalies = anomalies,
+            pickups = nextState.pickups + objPickups,
+            manufacturerNpc = npcState
+        )
+        nextState = ManufacturerSystem.tickClosedMysteryBoxOnRoomEnter(nextState, ::allocId, sfx)
         nextState = RoomMechanicSystem.initForRoom(nextState, curRoomResolved)
         nextState = CompanionSystem.onEnterRoomCompanions(nextState, curRoomResolved, ::allocId, sfx)
         return nextState
@@ -2167,7 +2339,12 @@ class GameEngine(
         val secretBonus = state.passiveItems.sumOf { it.effects.secretRoomChanceBonus.toDouble() }.toFloat() +
             (if (state.toyboxMemory.secretCluesRevealed) 0.25f else 0f) +
             (if (state.toyboxMemory.compassionScore >= 1) 0.15f else 0f)
-        val nextDungeon = DungeonGenerator.generateFloor(nextFloorNum, state.difficulty, secretBonus)
+        val nextDungeon = DungeonGenerator.generateFloor(
+            floorNumber = nextFloorNum,
+            difficulty = state.difficulty,
+            secretBonusChance = secretBonus,
+            forceManufacturerRoom = (state.nextFloorBias == "manufacturer")
+        )
         val theme = GameCatalog.floors[(nextFloorNum - 1).coerceIn(0, GameCatalog.floors.lastIndex)]
         val startRoom = nextDungeon.rooms[nextDungeon.startCoord]!!
         sfx.play(ToySfx.SYNERGY)
@@ -2184,6 +2361,12 @@ class GameEngine(
             projectiles = emptyList(),
             pickups = emptyList(),
             bombs = emptyList(),
+            roomInteractables = emptyList(),
+            roomObjective = null,
+            roomAnomalies = emptyList(),
+            manufacturerNpc = null,
+            interactionPrompt = null,
+            nextFloorBias = null,
             exitTrapdoorOpen = false,
             damagedInPrevRoom = false,
             damagedInCurrentRoom = false,
@@ -2390,5 +2573,55 @@ class GameEngine(
             val a = (i / 12f) * 2f * PI.toFloat()
             ParticleFx(x, y, cos(a) * speed, sin(a) * speed, 4.5f, colorHex, 0.4f, 0.4f)
         }
+    }
+
+    private fun computeInteractionPrompt(state: GameRunState): String? {
+        val npc = state.manufacturerNpc
+        if (npc != null && npc.present && !npc.interacted && hypot(npc.x - state.playerX, npc.y - state.playerY) <= 68f) {
+            return "Hablar con El Fabricante"
+        }
+        SecretDiscoverySystem.findNearbyAnomalyPrompt(state)?.let { return it.second }
+        RoomObjectiveSystem.findNearbyObjectivePrompt(state)?.let { return it }
+        InteractablesSystem.findNearbyInteractablePrompt(state)?.let { return it.second }
+        return null
+    }
+
+    fun interactNearby(state: GameRunState): GameRunState {
+        val npc = state.manufacturerNpc
+        if (npc != null && npc.present && !npc.interacted && hypot(npc.x - state.playerX, npc.y - state.playerY) <= 68f) {
+            return state.copy(manufacturerEncounter = ManufacturerSystem.buildEncounter(state))
+        }
+        SecretDiscoverySystem.findNearbyAnomalyPrompt(state)?.let { (anom, _) ->
+            return SecretDiscoverySystem.interactWithAnomaly(state, anom.id, ::allocId, sfx, onDiscovery)
+        }
+        val (handledObj, objState) = RoomObjectiveSystem.tryInteractObjective(state, ::allocId, sfx)
+        if (handledObj) return objState
+        InteractablesSystem.findNearbyInteractablePrompt(state)?.let { (inter, _) ->
+            return InteractablesSystem.activateInteractable(state, inter.id, ::allocId, sfx, onDiscovery)
+        }
+        return state
+    }
+
+    fun abandonRoomObjective(state: GameRunState): GameRunState {
+        return RoomObjectiveSystem.abandonObjective(state)
+    }
+
+    fun openRepairMinigame(state: GameRunState, zone: BodyZone, mode: RepairActionMode): GameRunState {
+        return RepairMinigameSystem.startMinigame(state, zone, mode)
+    }
+
+    fun handleRepairMinigameAction(state: GameRunState, action: String): GameRunState {
+        return RepairMinigameSystem.handleAction(state, action, sfx)
+    }
+
+    fun resolveManufacturerOffer(state: GameRunState, offerId: String?): GameRunState {
+        return ManufacturerSystem.resolveOffer(
+            state = state,
+            offerId = offerId,
+            sfx = sfx,
+            onDiscovery = onDiscovery,
+            acquireItemFn = ::acquirePassiveItem,
+            onRecordTrust = onManufacturerTrust
+        )
     }
 }

@@ -260,6 +260,8 @@ enum class RoomType(val displayName: String, val symbol: String) {
     EVENT("Evento", "!"),
     CHALLENGE("Sala de Desafío", "⚡"),
     REPAIR("Mesa de Costura", "✂"),
+    MANUFACTURER("Sala del Fabricante", "⚙"),
+    FORBIDDEN("Sala Prohibida", "☣"),
     BOSS("Jefe del Piso", "♛")
 }
 
@@ -289,6 +291,10 @@ enum class EnemyType(
     BETRAYED_BUNNY("Conejito Traicionado", 48f, 134f, false, "Antiguo compañero abandonado. Regresó en otra partida para cobrarse botones y rencor."),
     MIRROR_COPY("Reflejo Invertido", 30f, 112f, false, "Copia nacida de los espejos que imita tu movimiento y devuelve disparos."),
     WEEPING_TOY("Estatuilla Inmóvil", 38f, 178f, false, "Se congela cuando la miras directamente, pero se abalanza al darle la espalda."),
+    TIN_CAPTAIN("Capitán de Plomo", 56f, 68f, false, "Líder táctico: coordina a los soldaditos; si cae, su escuadrón se desorganiza."),
+    BODYGUARD_BEAR("Osito Guardaespaldas", 62f, 80f, false, "Protector: intercepta disparos frente a aliados frágiles y enfurece si caen."),
+    CLOCKWORK_COURIER("Conejo de Cuerda", 24f, 146f, false, "Cobarde: huye hacia la campana de alarma para atraer refuerzos."),
+    STITCH_MECHANIC("Costurero Reparador", 32f, 92f, false, "Reparador: acude a curar enemigos dañados si no lo detienes."),
     BOSS_VENDEDOR("El Vendedor", 240f, 72f, true, "Piso 1: Lanza juguetes armados y reordena cajas de exhibición."),
     BOSS_BOTONERO("El Botonero", 265f, 80f, true, "Piso 1: Dispara salvas de botones dorados en cruz."),
     BOSS_COSTURERA("La Costurera", 320f, 84f, true, "Piso 2: Teje hilos tensos que restringen el movimiento."),
@@ -434,3 +440,25 @@ data class MemoryFragmentDef(
     val title: String,
     val text: String
 )
+
+fun EnemyType.defaultRole(): EnemyRole = when (this) {
+    EnemyType.TIN_CAPTAIN -> EnemyRole.LEADER
+    EnemyType.BODYGUARD_BEAR -> EnemyRole.PROTECTOR
+    EnemyType.CLOCKWORK_COURIER -> EnemyRole.COWARD
+    EnemyType.THIEF_GREMLIN -> EnemyRole.COLLECTOR
+    EnemyType.STITCH_MECHANIC -> EnemyRole.REPAIRER
+    EnemyType.PLUSH_BEAR, EnemyType.RUSTY_TIN_KNIGHT -> EnemyRole.PROTECTOR
+    else -> EnemyRole.STANDARD
+}
+
+fun EnemyType.defaultFaction(): EnemyFaction = when (this) {
+    EnemyType.TIN_SOLDIER, EnemyType.TIN_CAPTAIN, EnemyType.RUSTY_TIN_KNIGHT,
+    EnemyType.CLOCKWORK_SPIDER, EnemyType.WINDUP_CHOMPER, EnemyType.CLOCKWORK_COURIER -> EnemyFaction.TIN_ARMY
+    EnemyType.PLUSH_BEAR, EnemyType.BODYGUARD_BEAR, EnemyType.RAG_BOMBER,
+    EnemyType.BETRAYED_BUNNY, EnemyType.THIEF_GREMLIN, EnemyType.STITCH_MECHANIC -> EnemyFaction.RAG_PLUSH
+    EnemyType.CREEPY_DOLL, EnemyType.MIRROR_DOLL, EnemyType.PORCELAIN_CLOWN,
+    EnemyType.NEEDLE_MARIONETTE, EnemyType.WEEPING_TOY, EnemyType.JACK_IN_BOX -> EnemyFaction.PORCELAIN
+    EnemyType.SHADOW_PUPPET, EnemyType.MIRROR_COPY, EnemyType.MIMIC_CHEST -> EnemyFaction.VOID_SHADOW
+    else -> EnemyFaction.VOID_SHADOW
+}
+

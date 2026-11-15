@@ -109,8 +109,8 @@ fun GameArenaCanvas(
         val trimColor = when {
             room.mechanic == RoomMechanic.MIRROR_COPIES -> Color(0xFFB7C9D6).copy(alpha = 0.75f)
             room.type == RoomType.REPAIR -> MutedMoss.copy(alpha = 0.72f)
-            room.type == RoomType.CURSE || room.type == RoomType.BOSS -> CrimsonBright.copy(alpha = 0.65f)
-            room.type == RoomType.TREASURE || room.type == RoomType.SECRET -> TarnishedBrass.copy(alpha = 0.72f)
+            room.type == RoomType.CURSE || room.type == RoomType.BOSS || room.type == RoomType.FORBIDDEN -> CrimsonBright.copy(alpha = 0.65f)
+            room.type == RoomType.TREASURE || room.type == RoomType.SECRET || room.type == RoomType.MANUFACTURER -> TarnishedBrass.copy(alpha = 0.75f)
             else -> TarnishedBrassDim.copy(alpha = 0.55f)
         }
         drawRect(
@@ -213,6 +213,193 @@ fun GameArenaCanvas(
             )
         }
 
+        // Physical Secret Anomalies (crooked frames, gazing dolls, irregular clocks, knocking walls, wrong shadows)
+        for (anom in state.roomAnomalies) {
+            val axPos = ax(anom.x)
+            val ayPos = ay(anom.y)
+            if (!anom.resolved) {
+                val pulse = 0.45f + 0.35f * sin(state.elapsedSeconds * 5f + anom.id)
+                val ringCol = if (anom.inspected) TarnishedBrass else TarnishedBrassDim.copy(alpha = 0.45f * pulse)
+                drawCircle(ringCol, asz(26f), Offset(axPos, ayPos), style = Stroke(2f))
+            }
+            val anomBmp = PixelArtSprites.forSecretClue(anom.clueType)
+            val aSz = asz(36f)
+            drawImage(
+                image = anomBmp,
+                dstOffset = IntOffset((axPos - aSz / 2f).toInt(), (ayPos - aSz / 2f).toInt()),
+                dstSize = IntSize(aSz.toInt().coerceAtLeast(1), aSz.toInt().coerceAtLeast(1)),
+                alpha = if (anom.resolved) 0.5f else 1f,
+                filterQuality = FilterQuality.None
+            )
+        }
+
+        // Alarm Bell Prop (used by Coward enemies)
+        state.alarmBellPos?.let { (bx, by) ->
+            val bellBmp = PixelArtSprites.forObjectiveProp("alarm_bell")
+            val bSz = asz(30f)
+            drawCircle(AmberWarning.copy(alpha = 0.2f), asz(20f), Offset(ax(bx), ay(by)))
+            drawImage(
+                image = bellBmp,
+                dstOffset = IntOffset((ax(bx) - bSz / 2f).toInt(), (ay(by) - bSz / 2f).toInt()),
+                dstSize = IntSize(bSz.toInt().coerceAtLeast(1), bSz.toInt().coerceAtLeast(1)),
+                filterQuality = FilterQuality.None
+            )
+        }
+
+        // Interactive Room Elements (Movables, Activables, Destructibles, Ambient Hazards)
+        for (inter in state.roomInteractables) {
+            val ix = ax(inter.x)
+            val iy = ay(inter.y)
+            val ir = asz(inter.radius)
+
+            // Draw train track oval before train sprite
+            if (inter.type == InteractableType.ELECTRIC_TRAIN) {
+                drawOval(
+                    color = TarnishedBrassDim.copy(alpha = 0.55f),
+                    topLeft = Offset(ax(ARENA_W * 0.5f - 235f), ay(ARENA_H * 0.5f - 210f)),
+                    size = Size(asz(470f), asz(420f)),
+                    style = Stroke(4f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f))
+                )
+            }
+
+            if (inter.type == InteractableType.TOY_CAROUSEL && inter.active && inter.activeTimer > 0f) {
+                val pulse = 0.55f + 0.45f * sin(state.elapsedSeconds * 10f)
+                drawCircle(CrimsonBright.copy(alpha = 0.16f * pulse), asz(145f), Offset(ix, iy))
+                drawCircle(TarnishedBrass.copy(alpha = 0.55f), asz(145f), Offset(ix, iy), style = Stroke(2.5f))
+            }
+
+            if ((inter.type == InteractableType.LIVE_WIRE && inter.active && inter.activeTimer > 0f) ||
+                inter.electrifiedTimer > 0f
+            ) {
+                val sparkAlpha = 0.4f + 0.4f * abs(sin(state.elapsedSeconds * 16f))
+                drawCircle(Color(0xFF4CC9F0).copy(alpha = 0.25f * sparkAlpha), ir * 1.6f, Offset(ix, iy))
+                drawCircle(Color(0xFF90E0EF).copy(alpha = sparkAlpha), ir * 1.4f, Offset(ix, iy), style = Stroke(2.5f))
+            }
+
+            if (inter.type == InteractableType.HANGING_SHELF && !inter.triggered && !inter.destroyed) {
+                // Target drop shadow under hanging shelf
+                drawOval(Color.Black.copy(alpha = 0.35f), Offset(ix - ir, iy + ir * 0.4f), Size(ir * 2f, ir * 0.7f))
+                drawCircle(CrimsonBright.copy(alpha = 0.35f), ir * 1.25f, Offset(ix, iy), style = Stroke(2f))
+            }
+
+            if (inter.type == InteractableType.STEAM_VENT && inter.active) {
+                drawCircle(CottonWhite.copy(alpha = 0.24f), ir * 1.7f, Offset(ix, iy))
+            }
+
+            val bmp = PixelArtSprites.forInteractable(inter.type, active = inter.active, destroyed = inter.destroyed)
+            val spriteSz = ir * 2.15f
+            val rotDeg = if (inter.type == InteractableType.TOY_CAROUSEL && inter.active) state.elapsedSeconds * 180f else 0f
+            rotate(rotDeg, Offset(ix, iy)) {
+                drawImage(
+                    image = bmp,
+                    dstOffset = IntOffset((ix - spriteSz / 2f).toInt(), (iy - spriteSz / 2f).toInt()),
+                    dstSize = IntSize(spriteSz.toInt().coerceAtLeast(1), spriteSz.toInt().coerceAtLeast(1)),
+                    alpha = if (inter.destroyed) 0.58f else 1f,
+                    filterQuality = FilterQuality.None
+                )
+            }
+        }
+
+        // Alternative Room Objective Visuals (Crying Box, Lost Toy, Escort Parcel, 3 Windups, Last Chair Safe Zone)
+        state.roomObjective?.let { obj ->
+            if (!obj.completed && !obj.failed) {
+                when (obj.type) {
+                    ObjectiveType.LAST_CHAIR_SAFE_ZONE -> {
+                        val zx = ax(obj.safeZoneX)
+                        val zy = ay(obj.safeZoneY)
+                        val r = asz(84f)
+                        val alpha = if (obj.safeZoneActive) 0.34f + 0.2f * abs(sin(state.elapsedSeconds * 8f)) else 0.14f
+                        val col = if (obj.safeZoneActive) TarnishedBrass else MutedMoss
+                        drawCircle(col.copy(alpha = alpha), r, Offset(zx, zy))
+                        drawCircle(col.copy(alpha = 0.85f), r, Offset(zx, zy), style = Stroke(if (obj.safeZoneActive) 4f else 2f))
+                    }
+                    ObjectiveType.PROTECT_CRYING_BOX -> {
+                        val cx = ax(obj.entityX)
+                        val cy = ay(obj.entityY)
+                        val sz = asz(46f)
+                        drawCircle(CrimsonBright.copy(alpha = 0.2f), asz(34f), Offset(cx, cy), style = Stroke(2f))
+                        drawImage(
+                            PixelArtSprites.forObjectiveProp("crying_box"),
+                            dstOffset = IntOffset((cx - sz / 2f).toInt(), (cy - sz / 2f).toInt()),
+                            dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                            filterQuality = FilterQuality.None
+                        )
+                        val ratio = (obj.entityHp / obj.entityMaxHp.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                        drawRect(CharcoalBlack, Offset(cx - asz(26f), cy - asz(32f)), Size(asz(52f), 5f))
+                        drawRect(MutedMoss, Offset(cx - asz(26f), cy - asz(32f)), Size(asz(52f) * ratio, 5f))
+                    }
+                    ObjectiveType.CATCH_LOST_TOY -> {
+                        val lx = ax(obj.entityX)
+                        val ly = ay(obj.entityY)
+                        val sz = asz(38f)
+                        drawCircle(TarnishedBrass.copy(alpha = 0.28f), asz(26f), Offset(lx, ly))
+                        drawImage(
+                            PixelArtSprites.forCompanion(CompanionId.BUNNY),
+                            dstOffset = IntOffset((lx - sz / 2f).toInt(), (ly - sz / 2f).toInt()),
+                            dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                            filterQuality = FilterQuality.None
+                        )
+                    }
+                    ObjectiveType.ESCORT_PACKAGE -> {
+                        val dx = ax(obj.deliveryX)
+                        val dy = ay(obj.deliveryY)
+                        drawCircle(MutedMoss.copy(alpha = 0.25f), asz(44f), Offset(dx, dy))
+                        drawCircle(MutedMoss, asz(44f), Offset(dx, dy), style = Stroke(3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)))
+
+                        val pxPos = ax(obj.entityX)
+                        val pyPos = ay(obj.entityY)
+                        val sz = asz(42f)
+                        drawImage(
+                            PixelArtSprites.forObjectiveProp("delivery_box"),
+                            dstOffset = IntOffset((pxPos - sz / 2f).toInt(), (pyPos - sz / 2f).toInt()),
+                            dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                            filterQuality = FilterQuality.None
+                        )
+                        val ratio = (obj.entityHp / obj.entityMaxHp.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                        drawRect(CharcoalBlack, Offset(pxPos - asz(24f), pyPos - asz(30f)), Size(asz(48f), 5f))
+                        drawRect(TarnishedBrass, Offset(pxPos - asz(24f), pyPos - asz(30f)), Size(asz(48f) * ratio, 5f))
+                    }
+                    ObjectiveType.WIND_THREE_MECHANISMS -> {
+                        obj.windupPositions.forEachIndexed { idx, (wx, wy) ->
+                            val wound = idx in obj.woundIndices
+                            val wpx = ax(wx)
+                            val wpy = ay(wy)
+                            drawCircle(if (wound) MutedMoss.copy(alpha = 0.3f) else TarnishedBrass.copy(alpha = 0.28f), asz(26f), Offset(wpx, wpy))
+                            drawCircle(if (wound) MutedMoss else TarnishedBrass, asz(22f), Offset(wpx, wpy), style = Stroke(2.5f))
+                            val sz = asz(28f)
+                            drawImage(
+                                PixelArtSprites.forInteractable(InteractableType.WINDUP_JACK_TRAP, active = wound),
+                                dstOffset = IntOffset((wpx - sz / 2f).toInt(), (wpy - sz / 2f).toInt()),
+                                dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                                filterQuality = FilterQuality.None
+                            )
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+
+        // El Fabricante NPC
+        state.manufacturerNpc?.let { npc ->
+            if (npc.present) {
+                val nx = ax(npc.x)
+                val ny = ay(npc.y)
+                val aura = 0.5f + 0.35f * sin(state.elapsedSeconds * 3f)
+                drawCircle(TarnishedBrass.copy(alpha = 0.22f * aura), asz(44f), Offset(nx, ny))
+                drawCircle(CrimsonBright.copy(alpha = 0.45f), asz(36f), Offset(nx, ny), style = Stroke(2.5f))
+                val bmp = PixelArtSprites.manufacturerNpc()
+                val sz = asz(58f)
+                drawImage(
+                    image = bmp,
+                    dstOffset = IntOffset((nx - sz / 2f).toInt(), (ny - sz / 2f).toInt()),
+                    dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                    alpha = if (npc.interacted) 0.65f else 1f,
+                    filterQuality = FilterQuality.None
+                )
+            }
+        }
+
         // Ground Pickups & Pedestals with Representative Pixel Icons
         val bobFloat = sin(state.elapsedSeconds * 4.5f) * asz(4f)
         for (p in state.pickups) {
@@ -308,6 +495,29 @@ fun GameArenaCanvas(
                         filterQuality = FilterQuality.None
                     )
                 }
+                PickupKind.MATERIAL -> {
+                    val mat = runCatching { RepairMaterial.valueOf(p.valueStr) }.getOrNull() ?: RepairMaterial.THREAD
+                    val bmp = PixelArtSprites.forMaterial(mat)
+                    val sz = asz(30f)
+                    drawCircle(MutedMoss.copy(alpha = 0.26f), asz(17f), Offset(px, py))
+                    drawImage(
+                        bmp,
+                        dstOffset = IntOffset((px - sz / 2f).toInt(), (py - sz / 2f + bobFloat).toInt()),
+                        dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                        filterQuality = FilterQuality.None
+                    )
+                }
+                PickupKind.GEAR_TOKEN -> {
+                    val bmp = PixelArtSprites.forObjectiveProp("gear_token")
+                    val sz = asz(34f)
+                    drawCircle(TarnishedBrass.copy(alpha = 0.35f), asz(20f), Offset(px, py))
+                    drawImage(
+                        bmp,
+                        dstOffset = IntOffset((px - sz / 2f).toInt(), (py - sz / 2f + bobFloat).toInt()),
+                        dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                        filterQuality = FilterQuality.None
+                    )
+                }
             }
         }
 
@@ -387,6 +597,33 @@ fun GameArenaCanvas(
                 val ratio = (e.hp / e.maxHp).coerceIn(0f, 1f)
                 drawRect(CharcoalBlack, Offset(ex - er, ey - spriteH * 0.55f - 8f), Size(er * 2f, 5f))
                 drawRect(CrimsonBright, Offset(ex - er, ey - spriteH * 0.55f - 8f), Size(er * 2f * ratio, 5f))
+            }
+
+            // Enemy Relationship Badges (Leader, Protector, Coward, Repairer, Disorganized, Stolen Part)
+            val badgeY = ey - spriteH * 0.55f - 14f
+            when {
+                e.disorganized -> {
+                    drawCircle(AmberWarning, asz(4.5f), Offset(ex - asz(6f), badgeY))
+                    drawCircle(AmberWarning, asz(4.5f), Offset(ex + asz(6f), badgeY))
+                }
+                e.enraged -> {
+                    drawCircle(CrimsonBright, asz(6f), Offset(ex, badgeY))
+                }
+                e.role == EnemyRole.LEADER -> {
+                    drawCircle(TarnishedBrass, asz(6f), Offset(ex, badgeY))
+                }
+                e.role == EnemyRole.PROTECTOR && e.type == EnemyType.BODYGUARD_BEAR -> {
+                    drawCircle(SlateBlue, asz(5.5f), Offset(ex, badgeY))
+                }
+                e.role == EnemyRole.COWARD -> {
+                    drawCircle(AmberWarning, asz(5.5f), Offset(ex, badgeY))
+                }
+                e.role == EnemyRole.REPAIRER -> {
+                    drawCircle(MutedMoss, asz(5.5f), Offset(ex, badgeY))
+                }
+            }
+            if (e.carriedPart != null) {
+                drawCircle(CrimsonBright, asz(5f), Offset(ex + er * 0.7f, ey - er * 0.6f))
             }
         }
 
@@ -756,6 +993,20 @@ private fun DrawScope.drawRoomDecorations(
                 style = Stroke(3.5f)
             )
             drawCircle(CrimsonBright.copy(alpha = 0.22f), asz(120f), Offset(ax(500f), ay(525f)), style = Stroke(3f))
+        }
+        RoomType.MANUFACTURER -> {
+            drawCircle(TarnishedBrass.copy(alpha = 0.2f), asz(190f), Offset(ax(500f), ay(440f)))
+            drawCircle(TarnishedBrass.copy(alpha = 0.55f), asz(190f), Offset(ax(500f), ay(440f)), style = Stroke(3f))
+            drawRoundRect(
+                color = AgedWoodLight.copy(alpha = 0.35f),
+                topLeft = Offset(ax(360f), ay(410f)),
+                size = Size(asz(280f), asz(90f)),
+                cornerRadius = CornerRadius(6f, 6f)
+            )
+        }
+        RoomType.FORBIDDEN -> {
+            drawCircle(CrimsonBright.copy(alpha = 0.26f), asz(170f), Offset(ax(500f), ay(520f)), style = Stroke(4f))
+            drawCircle(CrimsonBlood.copy(alpha = 0.22f), asz(115f), Offset(ax(500f), ay(520f)), style = dashStroke)
         }
         else -> {
             // Subtle room border stitching on some combat/event/secret rooms

@@ -8,6 +8,9 @@ import com.example.data.model.CharacterId
 import com.example.data.model.CompanionId
 import com.example.data.model.ConsumableType
 import com.example.data.model.EnemyType
+import com.example.data.model.InteractableType
+import com.example.data.model.RepairMaterial
+import com.example.data.model.SecretClueType
 
 /**
  * Handcrafted dark-outlined pixel-art sprite matrices matching the reference sprite sheet aesthetic:
@@ -333,6 +336,10 @@ object PixelArtSprites {
             EnemyType.BETRAYED_BUNNY -> PixelArtCompanionSprites.betrayedBunny()
             EnemyType.MIRROR_COPY -> PixelArtCompanionSprites.mirrorCopy()
             EnemyType.WEEPING_TOY -> PixelArtCompanionSprites.weepingToy(frozen = disguised)
+            EnemyType.TIN_CAPTAIN -> PixelArtExpandedSprites.tinCaptain()
+            EnemyType.BODYGUARD_BEAR -> PixelArtExpandedSprites.bodyguardBear()
+            EnemyType.CLOCKWORK_COURIER -> PixelArtExpandedSprites.clockworkCourier()
+            EnemyType.STITCH_MECHANIC -> PixelArtExpandedSprites.stitchMechanic()
 
             EnemyType.BOSS_VENDEDOR -> sprite("boss_vendedor", listOf(
                 "......KKKKKKKK......",
@@ -652,4 +659,10 @@ object PixelArtSprites {
         PixelArtCompanionSprites.forCompanion(id, broken)
     fun nurseryBlockObstacle(): ImageBitmap = PixelArtCompanionSprites.nurseryBlockObstacle()
     fun companionBellProp(): ImageBitmap = PixelArtCompanionSprites.companionBellProp()
+    fun manufacturerNpc(): ImageBitmap = PixelArtExpandedSprites.manufacturerNpc()
+    fun forInteractable(type: InteractableType, active: Boolean = false, destroyed: Boolean = false): ImageBitmap =
+        PixelArtExpandedSprites.forInteractable(type, active, destroyed)
+    fun forSecretClue(type: SecretClueType): ImageBitmap = PixelArtExpandedSprites.forSecretClue(type)
+    fun forMaterial(mat: RepairMaterial): ImageBitmap = PixelArtExpandedSprites.forMaterial(mat)
+    fun forObjectiveProp(kind: String): ImageBitmap = PixelArtExpandedSprites.forObjectiveProp(kind)
 }

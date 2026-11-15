@@ -165,4 +165,21 @@ class ProgressionRepository(private val dao: ToyboxDao) {
             dao.upsertProfile(current.copy(companionGrudges = set.joinToString(",")))
         }
     }
+
+    suspend fun markLoreSeen() {
+        val current = dao.getProfile() ?: PlayerProfileEntity()
+        if (!current.loreSeen) {
+            dao.upsertProfile(current.copy(loreSeen = true))
+        }
+    }
+
+    suspend fun recordManufacturerDecision(accepted: Boolean) {
+        val current = dao.getProfile() ?: PlayerProfileEntity()
+        dao.upsertProfile(
+            current.copy(
+                manufacturerAccepted = current.manufacturerAccepted + if (accepted) 1 else 0,
+                manufacturerRejected = current.manufacturerRejected + if (!accepted) 1 else 0
+            )
+        )
+    }
 }

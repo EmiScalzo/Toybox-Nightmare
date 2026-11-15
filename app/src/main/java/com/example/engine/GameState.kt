@@ -43,7 +43,14 @@ data class ActiveEnemy(
     val hitFlashTimer: Float = 0f,
     val telegraphTimer: Float = 0f,
     val chargeDirX: Float = 0f,
-    val chargeDirY: Float = 0f
+    val chargeDirY: Float = 0f,
+    val carriedPart: EquippedBodyPart? = null,
+    val enraged: Boolean = false,
+    val disorganized: Boolean = false,
+    val fleeing: Boolean = false,
+    val protectedAllyId: Long? = null,
+    val role: EnemyRole = EnemyRole.STANDARD,
+    val faction: EnemyFaction = EnemyFaction.VOID_SHADOW
 )
 
 enum class PickupKind {
@@ -54,7 +61,9 @@ enum class PickupKind {
     DETACHED_PART,
     NEW_PART_PEDESTAL,
     PASSIVE_ITEM_PEDESTAL,
-    COMPANION_SHRINE
+    COMPANION_SHRINE,
+    MATERIAL,
+    GEAR_TOKEN
 }
 
 data class GroundPickup(
@@ -163,6 +172,85 @@ data class ToyboxMemoryState(
     val memoriesCollected: List<String> = emptyList()
 )
 
+data class RoomInteractable(
+    val id: Long,
+    val type: InteractableType,
+    val x: Float,
+    val y: Float,
+    val radius: Float = 26f,
+    val active: Boolean = false,
+    val destroyed: Boolean = false,
+    val triggered: Boolean = false,
+    val hp: Float = type.maxHp,
+    val maxHp: Float = type.maxHp,
+    val activeTimer: Float = 0f,
+    val cooldownTimer: Float = 0f,
+    val vx: Float = 0f,
+    val vy: Float = 0f,
+    val variant: Int = 0,
+    val linkId: Long? = null,
+    val trainAngle: Float = 0f,
+    val electrifiedTimer: Float = 0f
+)
+
+data class RoomObjectiveState(
+    val type: ObjectiveType,
+    val targetCount: Int = 1,
+    val currentCount: Int = 0,
+    val timerSec: Float = 0f,
+    val maxTimerSec: Float = 0f,
+    val completed: Boolean = false,
+    val failed: Boolean = false,
+    val entityX: Float = ARENA_W * 0.5f,
+    val entityY: Float = ARENA_H * 0.5f,
+    val entityHp: Float = 60f,
+    val entityMaxHp: Float = 60f,
+    val deliveryX: Float = ARENA_W * 0.78f,
+    val deliveryY: Float = ARENA_H * 0.5f,
+    val safeZoneX: Float = ARENA_W * 0.5f,
+    val safeZoneY: Float = ARENA_H * 0.5f,
+    val safeZoneActive: Boolean = false,
+    val safeZoneBeatTimer: Float = 3.2f,
+    val tookDamageDuringObjective: Boolean = false,
+    val canAbandon: Boolean = true,
+    val windupPositions: List<Pair<Float, Float>> = emptyList(),
+    val woundIndices: Set<Int> = emptySet()
+)
+
+data class RoomAnomaly(
+    val id: Long,
+    val clueType: SecretClueType,
+    val x: Float,
+    val y: Float,
+    val targetFlavor: SecretRoomFlavor,
+    val resolved: Boolean = false,
+    val inspected: Boolean = false
+)
+
+data class PendingRepairMinigame(
+    val zone: BodyZone,
+    val mode: RepairActionMode,
+    val minigameType: RepairMinigameType,
+    val sequenceTarget: List<Int> = listOf(1, 2, 3, 4),
+    val currentStep: Int = 0,
+    val gearStates: List<Int> = listOf(0, 1, 0),
+    val springCursor: Float = 0.2f,
+    val springDir: Float = 1f,
+    val porcelainMatched: Set<Int> = emptySet(),
+    val wiringMatched: Set<Int> = emptySet(),
+    val selectedWireNode: Int? = null,
+    val attemptsLeft: Int = 5,
+    val quality: RepairQuality? = null,
+    val finished: Boolean = false
+)
+
+data class ManufacturerNpcState(
+    val x: Float = ARENA_W * 0.5f,
+    val y: Float = ARENA_H * 0.34f,
+    val present: Boolean = false,
+    val interacted: Boolean = false
+)
+
 data class GameRunState(
     val isActive: Boolean = false,
     val isPaused: Boolean = false,
@@ -255,5 +343,24 @@ data class GameRunState(
     val usedAnyRepair: Boolean = false,
     val screenShake: Float = 0f,
     val toyboxMemory: ToyboxMemoryState = ToyboxMemoryState(),
-    val unlockedAchievementsThisRun: List<AchievementDef> = emptyList()
+    val unlockedAchievementsThisRun: List<AchievementDef> = emptyList(),
+
+    // Expanded 6 Mechanics State
+    val roomInteractables: List<RoomInteractable> = emptyList(),
+    val roomObjective: RoomObjectiveState? = null,
+    val roomAnomalies: List<RoomAnomaly> = emptyList(),
+    val materials: Map<RepairMaterial, Int> = emptyMap(),
+    val pendingRepairMinigame: PendingRepairMinigame? = null,
+    val manufacturerNpc: ManufacturerNpcState? = null,
+    val manufacturerEncounter: ManufacturerEncounter? = null,
+    val manufacturerTrustDelta: Int = 0,
+    val closedMysteryBoxTimer: Int = 0,
+    val nextFloorBias: String? = null,
+    val defeatedCaptainsCount: Int = 0,
+    val escapedCowardsCount: Int = 0,
+    val interactionPrompt: String? = null,
+    val recentEngineEvents: List<String> = emptyList(),
+    val partReinforcedRooms: Map<BodyZone, Int> = emptyMap(),
+    val modifiedArmExplosiveGears: Boolean = false,
+    val alarmBellPos: Pair<Float, Float>? = null
 )

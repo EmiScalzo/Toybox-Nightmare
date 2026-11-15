@@ -37,7 +37,10 @@ import com.example.data.model.BodyZone
 import com.example.data.model.CharacterId
 import com.example.data.model.CompanionId
 import com.example.data.model.EnemyType
+import com.example.data.model.InteractableType
 import com.example.data.model.Rarity
+import com.example.data.model.RepairMaterial
+import com.example.data.model.SecretClueType
 import com.example.ui.components.PixelArtSprites
 import com.example.ui.components.StitchedDivider
 import com.example.ui.components.ToyboxFrameCard
@@ -55,6 +58,8 @@ enum class AlbumTab(
     SYNERGIES("Sinergias", "Despierta las 14 sinergias de etiquetas: +30 Puntos de Desafío."),
     MEMORIES("Recuerdos", "Reúne los 6 recuerdos ocultos: revela la historia completa del fundador."),
     COMPANIONS("Compañeros", "Encuentra a los 8 juguetes acompañantes y descubre sus condiciones."),
+    MECHANISMS("Mecanismos", "Interactúa con los 23 mecanismos, objetos móviles y trampas del taller."),
+    SECRETS("Secretos", "Descubre anomalías físicas, materiales de reparación y a El Fabricante."),
     CHARACTERS("Personajes", "Desbloquea los 6 muñecos jugables: Medalla de Vitrina Completa.")
 }
 
@@ -71,7 +76,11 @@ private data class AlbumCardModel(
     val characterId: CharacterId? = null,
     val partInfo: Pair<String, BodyZone>? = null,
     val itemId: String? = null,
-    val companionId: CompanionId? = null
+    val companionId: CompanionId? = null,
+    val interactableType: InteractableType? = null,
+    val secretClueType: SecretClueType? = null,
+    val repairMaterial: RepairMaterial? = null,
+    val isManufacturer: Boolean = false
 )
 
 @Composable
@@ -172,6 +181,64 @@ fun CollectionAlbumScreen(
                     shapeKind = 7,
                     companionId = c
                 )
+            }
+            AlbumTab.MECHANISMS -> InteractableType.entries.map { inter ->
+                AlbumCardModel(
+                    key = "interactable:${inter.name}",
+                    title = inter.displayName,
+                    rarity = inter.rarity,
+                    statsLine = "${inter.category.displayName} • ${if (inter.affectsEnemies && inter.affectsPlayer) "Afecta a todos" else if (inter.affectsEnemies) "Daña enemigos" else "Utilidad"}",
+                    description = inter.description,
+                    lore = inter.lore,
+                    accentColor = inter.rarity.color,
+                    shapeKind = 8,
+                    interactableType = inter
+                )
+            }
+            AlbumTab.SECRETS -> buildList {
+                SecretClueType.entries.forEach { clue ->
+                    add(
+                        AlbumCardModel(
+                            key = "clue:${clue.name}",
+                            title = clue.displayName,
+                            rarity = Rarity.RARE,
+                            statsLine = "Anomalía física en sala",
+                            description = clue.hintText,
+                            lore = clue.lore,
+                            accentColor = TarnishedBrass,
+                            shapeKind = 9,
+                            secretClueType = clue
+                        )
+                    )
+                }
+                add(
+                    AlbumCardModel(
+                        key = "secret:MANUFACTURER",
+                        title = "El Fabricante",
+                        rarity = Rarity.LEGENDARY,
+                        statsLine = "Entidad oculta • Pactos y trasplantes",
+                        description = "Figura alta con máscara que ofrece intercambios corporales, pactos de vida, alquimia de defectos y La Caja Cerrada.",
+                        lore = "«Todo juguete roto puede volver a andar, si aceptas el hilo adecuado.»",
+                        accentColor = CrimsonBright,
+                        shapeKind = 10,
+                        isManufacturer = true
+                    )
+                )
+                RepairMaterial.entries.forEach { mat ->
+                    add(
+                        AlbumCardModel(
+                            key = "material:${mat.name}",
+                            title = "Material: ${mat.displayName}",
+                            rarity = mat.rarity,
+                            statsLine = "Insumo de Mesa de Costura",
+                            description = "Otorga durabilidad adicional al usarlo en los minijuegos de reparación, refuerzo o modificación.",
+                            lore = "Pieza rescatada de los cajones originales de Wonderland Toys.",
+                            accentColor = mat.rarity.color,
+                            shapeKind = 11,
+                            repairMaterial = mat
+                        )
+                    )
+                }
             }
             AlbumTab.CHARACTERS -> GameCatalog.characters.map { c ->
                 AlbumCardModel(
@@ -380,6 +447,10 @@ private fun AlbumSpecimenCanvas(
             card.partInfo != null -> PixelArtSprites.forBodyPart(card.partInfo.first, card.partInfo.second)
             card.itemId != null -> PixelArtSprites.forPassiveItem(card.itemId)
             card.companionId != null -> PixelArtSprites.forCompanion(card.companionId)
+            card.interactableType != null -> PixelArtSprites.forInteractable(card.interactableType)
+            card.secretClueType != null -> PixelArtSprites.forSecretClue(card.secretClueType)
+            card.repairMaterial != null -> PixelArtSprites.forMaterial(card.repairMaterial)
+            card.isManufacturer -> PixelArtSprites.manufacturerNpc()
             else -> null
         }
         if (pixelSprite != null) {

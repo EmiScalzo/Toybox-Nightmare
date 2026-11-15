@@ -44,7 +44,8 @@ fun MainMenuScreen(
     unlockedAchievementCount: Int,
     totalAchievements: Int,
     onNavigate: (AppRoute) -> Unit,
-    onOpenTutorial: () -> Unit
+    onOpenTutorial: () -> Unit,
+    onOpenLore: () -> Unit = {}
 ) {
     val flickerAnim = rememberInfiniteTransition(label = "lantern")
     val signAlpha by flickerAnim.animateFloat(
@@ -273,9 +274,22 @@ fun MainMenuScreen(
             StitchedDivider()
             Spacer(Modifier.height(8.dp))
 
+            // Replay Lore Intro
+            DiegeticMenuObject(
+                title = "VER HISTORIA",
+                objectLabel = "Diario de Wonderland",
+                subtitle = "Revive el prólogo ilustrado de Patch y El Fabricante",
+                icon = Icons.AutoMirrored.Filled.MenuBook,
+                accentColor = TarnishedBrass,
+                isPrimary = false,
+                testTag = "menu_lore_button",
+                onClick = onOpenLore
+            )
+            Spacer(Modifier.height(10.dp))
+
             // Metal Plaque: Credits
             DiegeticMenuObject(
-                title = "CRÉDITOS Y HISTORIA",
+                title = "CRÉDITOS Y ARCHIVOS",
                 objectLabel = "Placa Metálica del Taller",
                 subtitle = "Archivos de Wonderland Toys • Versión Vertical Android",
                 icon = Icons.Default.Badge,

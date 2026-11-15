@@ -6,6 +6,7 @@ import com.example.data.model.Direction
 import com.example.data.model.EnemyType
 import com.example.data.model.RoomMechanic
 import com.example.data.model.RoomType
+import com.example.data.model.SecretRoomFlavor
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -41,7 +42,8 @@ data class RoomBlueprint(
     var repairUsed: Boolean = false,
     var eventResolved: Boolean = false,
     val visualVariant: Int = 0,
-    val mechanic: RoomMechanic = RoomMechanic.NONE
+    val mechanic: RoomMechanic = RoomMechanic.NONE,
+    val secretFlavor: SecretRoomFlavor? = null
 )
 
 data class EnemySpawn(
@@ -74,6 +76,7 @@ object DungeonGenerator {
         floorNumber: Int,
         difficulty: Difficulty,
         secretBonusChance: Float = 0f,
+        forceManufacturerRoom: Boolean = false,
         rng: Random = Random.Default
     ): DungeonFloor {
         val targetCount = (11 + floorNumber * 2).coerceIn(12, 18)
@@ -146,6 +149,14 @@ object DungeonGenerator {
             typeMap[it] = RoomType.EVENT
         }
 
+        // Occasional Manufacturer workshop or Forbidden room
+        if (forceManufacturerRoom || rng.nextFloat() < 0.30f) {
+            (availableSpecial.firstOrNull() ?: (coords - typeMap.keys).randomOrNull(rng))?.let {
+                availableSpecial.remove(it)
+                typeMap[it] = RoomType.MANUFACTURER
+            }
+        }
+
         // Optional secret room
         var secretCoord: GridCoord? = null
         if (rng.nextFloat() < 0.65f + secretBonusChance) {
@@ -168,8 +179,9 @@ object DungeonGenerator {
             if (c !in typeMap) {
                 val r = rng.nextFloat()
                 typeMap[c] = when {
-                    r < 0.10f -> RoomType.CURSE
-                    r < 0.20f -> RoomType.CHALLENGE
+                    r < 0.06f -> RoomType.FORBIDDEN
+                    r < 0.14f -> RoomType.CURSE
+                    r < 0.24f -> RoomType.CHALLENGE
                     else -> RoomType.COMBAT
                 }
             }
@@ -196,7 +208,7 @@ object DungeonGenerator {
 
             val isPeaceful = type in setOf(
                 RoomType.START, RoomType.TREASURE, RoomType.SHOP,
-                RoomType.REPAIR, RoomType.EVENT, RoomType.SECRET
+                RoomType.REPAIR, RoomType.EVENT, RoomType.SECRET, RoomType.MANUFACTURER
             )
             val mechanic = rollRoomMechanic(type, floorNumber, difficulty, rng)
             val obstacles = if (mechanic == RoomMechanic.NURSERY_MAZE) {
@@ -208,13 +220,14 @@ object DungeonGenerator {
                 type == RoomType.BOSS -> listOf(EnemySpawn(floorBoss, 0.5f, 0.26f))
                 type == RoomType.CHALLENGE -> generateEnemies(floorNumber, count = 4 + floorNumber.coerceAtMost(2), mechanic, obstacles, rng)
                 type == RoomType.COMBAT -> generateEnemies(floorNumber, count = (2 + floorNumber / 2 + rng.nextInt(2)).coerceAtMost(5), mechanic, obstacles, rng)
-                type == RoomType.CURSE -> generateEnemies(floorNumber, count = 3, mechanic, obstacles, rng)
+                type == RoomType.CURSE || type == RoomType.FORBIDDEN -> generateEnemies(floorNumber, count = 3, mechanic, obstacles, rng)
                 else -> emptyList()
             }
 
             val eventId = if (type == RoomType.EVENT) GameCatalog.events.random(rng).id else null
             val shopStock = if (type == RoomType.SHOP) buildShopStock(rng) else emptyList()
             val variant = ((c.x * 7 + c.y * 13 + floorNumber * 3 + rng.nextInt(4)) and 0x7FFFFFFF) % 4
+            val flavor = if (type == RoomType.SECRET) SecretRoomFlavor.entries.random(rng) else null
 
             rooms[c] = RoomBlueprint(
                 coord = c,
@@ -228,7 +241,8 @@ object DungeonGenerator {
                 visited = (c == GridCoord(0, 0)),
                 shopStock = shopStock,
                 visualVariant = variant,
-                mechanic = mechanic
+                mechanic = mechanic,
+                secretFlavor = flavor
             )
         }
 
@@ -300,7 +314,9 @@ object DungeonGenerator {
     }
 
     private fun generateObstacles(type: RoomType, rng: Random): List<ObstacleRect> {
-        if (type == RoomType.START || type == RoomType.SHOP || type == RoomType.REPAIR || type == RoomType.SECRET || type == RoomType.EVENT) {
+        if (type == RoomType.START || type == RoomType.SHOP || type == RoomType.REPAIR ||
+            type == RoomType.SECRET || type == RoomType.EVENT || type == RoomType.MANUFACTURER
+        ) {
             return emptyList()
         }
         if (type == RoomType.TREASURE) {
@@ -371,13 +387,17 @@ object DungeonGenerator {
             EnemyType.PLUSH_BEAR,
             EnemyType.JACK_IN_BOX,
             EnemyType.CLOCKWORK_SPIDER,
-            EnemyType.WINDUP_CHOMPER
+            EnemyType.WINDUP_CHOMPER,
+            EnemyType.TIN_CAPTAIN,
+            EnemyType.CLOCKWORK_COURIER
         )
         if (floor >= 2) {
             pool.add(EnemyType.MIRROR_DOLL)
             pool.add(EnemyType.THIEF_GREMLIN)
             pool.add(EnemyType.NEEDLE_MARIONETTE)
             pool.add(EnemyType.PORCELAIN_CLOWN)
+            pool.add(EnemyType.BODYGUARD_BEAR)
+            pool.add(EnemyType.STITCH_MECHANIC)
         }
         if (floor >= 3) {
             pool.add(EnemyType.MIMIC_CHEST)

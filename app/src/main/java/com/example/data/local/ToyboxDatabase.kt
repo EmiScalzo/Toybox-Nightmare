@@ -19,7 +19,10 @@ data class PlayerProfileEntity(
     val musicEnabled: Boolean = true,
     val screenShakeEnabled: Boolean = true,
     val darkVignetteIntensity: Float = 0.85f,
-    val companionGrudges: String = ""
+    val companionGrudges: String = "",
+    val loreSeen: Boolean = false,
+    val manufacturerAccepted: Int = 0,
+    val manufacturerRejected: Int = 0
 )
 
 @Entity(tableName = "achievement_progress")
@@ -102,7 +105,7 @@ interface ToyboxDao {
         UnlockedCharacterEntity::class,
         RunHistoryEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class ToyboxDatabase : RoomDatabase() {
@@ -124,13 +127,21 @@ abstract class ToyboxDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE player_profile ADD COLUMN loreSeen INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE player_profile ADD COLUMN manufacturerAccepted INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE player_profile ADD COLUMN manufacturerRejected INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): ToyboxDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     ToyboxDatabase::class.java,
                     "toybox_nightmare.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
             }
         }
     }
