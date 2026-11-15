@@ -1,0 +1,6 @@
+{
+  "name": "Toybox Nightmare",
+  "description": "Roguelike de acción y horror cenital en vertical ambientado en la juguetería abandonada Wonderland Toys, con desgaste corporal, defectos de fabricación, sinergias y memoria adaptativa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
