@@ -127,10 +127,11 @@ object DungeonGenerator {
             ?: GridCoord(0, 0))
 
         val availableSpecial = (deadEnds - bossCoord).shuffled(rng).toMutableList()
-        val fallbackPool = (coords - GridCoord(0, 0) - bossCoord - availableSpecial.toSet()).shuffled(rng)
+        val fallbackPool = (coords - GridCoord(0, 0) - bossCoord - availableSpecial.toSet()).shuffled(rng).toMutableList()
         fun takeSpecial(): GridCoord? =
             if (availableSpecial.isNotEmpty()) availableSpecial.removeAt(0)
-            else fallbackPool.firstOrNull { it != bossCoord }
+            else if (fallbackPool.isNotEmpty()) fallbackPool.removeAt(0)
+            else null
 
         val typeMap = mutableMapOf<GridCoord, RoomType>()
         typeMap[GridCoord(0, 0)] = RoomType.START
@@ -154,6 +155,17 @@ object DungeonGenerator {
             (availableSpecial.firstOrNull() ?: (coords - typeMap.keys).randomOrNull(rng))?.let {
                 availableSpecial.remove(it)
                 typeMap[it] = RoomType.MANUFACTURER
+            }
+        }
+
+        // 1-2 Lore / Memory Rooms per floor
+        val loreCount = if (floorNumber >= 2) 2 else 1
+        repeat(loreCount) {
+            val loreSpot = availableSpecial.firstOrNull()
+                ?: (coords - typeMap.keys).randomOrNull(rng)
+            if (loreSpot != null) {
+                availableSpecial.remove(loreSpot)
+                typeMap[loreSpot] = RoomType.LORE
             }
         }
 
@@ -208,7 +220,7 @@ object DungeonGenerator {
 
             val isPeaceful = type in setOf(
                 RoomType.START, RoomType.TREASURE, RoomType.SHOP,
-                RoomType.REPAIR, RoomType.EVENT, RoomType.SECRET, RoomType.MANUFACTURER
+                RoomType.REPAIR, RoomType.EVENT, RoomType.SECRET, RoomType.MANUFACTURER, RoomType.LORE
             )
             val mechanic = rollRoomMechanic(type, floorNumber, difficulty, rng)
             val obstacles = if (mechanic == RoomMechanic.NURSERY_MAZE) {
@@ -315,7 +327,8 @@ object DungeonGenerator {
 
     private fun generateObstacles(type: RoomType, rng: Random): List<ObstacleRect> {
         if (type == RoomType.START || type == RoomType.SHOP || type == RoomType.REPAIR ||
-            type == RoomType.SECRET || type == RoomType.EVENT || type == RoomType.MANUFACTURER
+            type == RoomType.SECRET || type == RoomType.EVENT || type == RoomType.MANUFACTURER ||
+            type == RoomType.LORE
         ) {
             return emptyList()
         }
@@ -433,9 +446,16 @@ object DungeonGenerator {
     private fun buildShopStock(rng: Random): List<ShopOffer> {
         val part = GameCatalog.bodyParts.filter { it.rarity.ordinal >= 1 }.random(rng)
         val item = GameCatalog.passiveItems.random(rng)
+        val backpackOffer = if (rng.nextFloat() < 0.55f) {
+            ShopOffer("shop_bp_tier", "Bolsillo Cosido (2 Espacios)", price = 4, itemId = "backpack_tier:STITCHED_POUCH")
+        } else {
+            ShopOffer("shop_bp_tier", "Mochila Infantil (4 Espacios)", price = 6, itemId = "backpack_tier:KIDS_BACKPACK")
+        }
         return listOf(
             ShopOffer("shop_heal", "Corazón de Algodón (+1 Vida)", price = 4, isHeal = true),
             ShopOffer("shop_kit", "Kit de Costura (+45 Durab.)", price = 4, isConsumable = true, itemId = "SEWING_KIT"),
+            backpackOffer,
+            ShopOffer("shop_bp_item", "Fardo para Mochila (Materiales)", price = 5, itemId = "backpack_item:CRAFTING_BUNDLE"),
             ShopOffer("shop_part", "${part.name} (${part.zone.shortLabel})", price = 8, isBodyPart = true, itemId = part.id),
             ShopOffer("shop_item", item.name, price = 10, itemId = item.id)
         )

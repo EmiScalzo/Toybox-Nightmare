@@ -16,10 +16,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.example.data.local.PlayerProfileEntity
 import com.example.data.local.RunHistoryEntity
+import com.example.engine.GameCreditsSystem
 import com.example.ui.components.StitchedDivider
 import com.example.ui.components.ToyboxFrameCard
 import com.example.ui.components.ToyboxPlaqueButton
@@ -254,11 +259,56 @@ fun CreditsScreen(onBack: () -> Unit) {
                 )
                 StitchedDivider(Modifier.padding(vertical = 10.dp))
                 Text(
-                    "TOYBOX NIGHTMARE • Edición Vertical Android\nTres pilares centrales:\n1. Reconstrucción y desgaste corporal en 6 zonas.\n2. 24 Defectos de fabricación con compensaciones.\n3. La juguetería recuerda tus decisiones y tácticas.",
+                    "Pilares de la Juguetería:\n1. Reconstrucción y desgaste corporal en 6 zonas.\n2. 24 Defectos de fabricación, mochilas y exploración narrativa.\n3. La juguetería recuerda tus decisiones y pistas resueltas.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = AgedIvory
                 )
             }
+
+            // Bottom Formal Credits Plaque
+            ToyboxFrameCard(
+                modifier = Modifier.fillMaxWidth().testTag("credits_plaque_card"),
+                borderColor = CrimsonBright
+            ) {
+                Text(
+                    text = GameCreditsSystem.GAME_TITLE,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = TarnishedBrass
+                )
+                StitchedDivider(Modifier.padding(vertical = 8.dp))
+                Text(
+                    text = "VERSIÓN: ${GameCreditsSystem.VERSION}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AgedIvory
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "ÚLTIMA ACTUALIZACIÓN: ${GameCreditsSystem.LAST_UPDATED}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AgedIvory
+                )
+                Spacer(Modifier.height(6.dp))
+                val authorAnnotated = buildAnnotatedString {
+                    withStyle(SpanStyle(color = Parchment)) {
+                        append("REALIZADO POR: ")
+                    }
+                    withStyle(SpanStyle(color = AgedIvory, fontWeight = FontWeight.SemiBold)) {
+                        append(GameCreditsSystem.AUTHOR_PREFIX)
+                    }
+                    withStyle(SpanStyle(color = TarnishedBrass, fontWeight = FontWeight.ExtraBold)) {
+                        append(GameCreditsSystem.AUTHOR_HIGHLIGHT)
+                    }
+                    withStyle(SpanStyle(color = AgedIvory, fontWeight = FontWeight.SemiBold)) {
+                        append(GameCreditsSystem.AUTHOR_SUFFIX)
+                    }
+                }
+                Text(
+                    text = authorAnnotated,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.testTag("credits_author_text")
+                )
+            }
+            Spacer(Modifier.height(14.dp))
         }
     }
 }

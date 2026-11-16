@@ -287,11 +287,24 @@ fun MainMenuScreen(
             )
             Spacer(Modifier.height(10.dp))
 
+            // Dedicated Main Menu Section: Archivo de Wonderland
+            DiegeticMenuObject(
+                title = "ARCHIVO DE WONDERLAND",
+                objectLabel = "Gaveta de Expedientes",
+                subtitle = "Fotografías, recuerdos, dibujos, documentos y planos ocultos",
+                icon = Icons.Default.CollectionsBookmark,
+                accentColor = MutedMoss,
+                isPrimary = false,
+                testTag = "menu_archive_button",
+                onClick = { onNavigate(AppRoute.WONDERLAND_ARCHIVE) }
+            )
+            Spacer(Modifier.height(10.dp))
+
             // Metal Plaque: Credits
             DiegeticMenuObject(
                 title = "CRÉDITOS Y ARCHIVOS",
                 objectLabel = "Placa Metálica del Taller",
-                subtitle = "Archivos de Wonderland Toys • Versión Vertical Android",
+                subtitle = "Historia del Taller, Versión y Autoría",
                 icon = Icons.Default.Badge,
                 accentColor = ParchmentDark,
                 isPrimary = false,

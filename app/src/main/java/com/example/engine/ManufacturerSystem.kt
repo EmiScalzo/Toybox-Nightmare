@@ -91,6 +91,20 @@ object ManufacturerSystem {
                 riskHint = "Aumenta la atención de los jefes.",
                 worldEffectId = "next_floor_manufacturer",
                 buttonsCost = 5.coerceAtMost(state.buttons)
+            ),
+            ManufacturerOffer(
+                id = "offer_manufacturer_pack",
+                title = if (state.backpackTier == BackpackTier.MANUFACTURER_PACK) "Mochila sin Fondo (8 Esp.)" else "Mochila del Fabricante (5 Esp.)",
+                category = ManufacturerDealCategory.WORLD_ALTER,
+                costSummary = if (state.maxHearts > 2) "-1 Corazón Máximo y 3 ●" else "4 ●",
+                rewardSummary = if (state.backpackTier == BackpackTier.MANUFACTURER_PACK)
+                    "Capacidad inmensa de 8 espacios (-10% vel. si llevas 6+)."
+                else
+                    "5 espacios sellados: tus piezas guardadas nunca pierden durabilidad.",
+                riskHint = "Costuras firmadas por El Fabricante.",
+                worldEffectId = if (state.backpackTier == BackpackTier.MANUFACTURER_PACK) "backpack:BOTTOMLESS_PACK" else "backpack:MANUFACTURER_PACK",
+                buttonsCost = (if (state.maxHearts > 2) 3 else 4).coerceAtMost(state.buttons),
+                maxHeartsCost = if (state.maxHearts > 2 && state.backpackTier == BackpackTier.MANUFACTURER_PACK) 1 else 0
             )
         )
 
@@ -114,8 +128,11 @@ object ManufacturerSystem {
     fun resolveOffer(
         state: GameRunState,
         offerId: String?,
+        allocId: () -> Long,
         sfx: SoundEffectsEngine,
         onDiscovery: (String, String) -> Unit,
+        onAchievement: (String) -> Unit,
+        onUnlockBackpack: (BackpackTier) -> Unit,
         acquireItemFn: (GameRunState, PassiveItemDef) -> GameRunState,
         onRecordTrust: (accepted: Boolean) -> Unit
     ): GameRunState {
@@ -217,11 +234,28 @@ object ManufacturerSystem {
             }
 
             ManufacturerDealCategory.WORLD_ALTER -> {
-                if (offer.worldEffectId == "closed_mystery_box") {
+                val we = offer.worldEffectId ?: ""
+                if (we == "closed_mystery_box") {
                     s = s.copy(
                         closedMysteryBoxTimer = 3,
                         activeBanner = RunUiBanner("La Caja Cerrada", "Llevas la caja sellada. Se abrirá en 3 salas...", 0xFFC89948, 3.0f)
                     )
+                } else if (we.startsWith("backpack:")) {
+                    if (offer.maxHeartsCost > 0 && s.maxHearts > 2) {
+                        val nh = s.maxHearts - offer.maxHeartsCost
+                        s = s.copy(maxHearts = nh, hearts = s.hearts.coerceAtMost(nh))
+                    }
+                    val tier = runCatching { BackpackTier.valueOf(we.removePrefix("backpack:")) }.getOrNull()
+                    if (tier != null) {
+                        s = BackpackSystem.equipTier(s, tier, allocId, sfx, onUnlockBackpack)
+                        s = WonderlandArchiveSystem.unlockArchiveEntry(
+                            s,
+                            archiveId = "arch_manufacturer_file",
+                            bonusText = "Obsequio sellado de El Fabricante.",
+                            onDiscovery = onDiscovery,
+                            onAchievement = onAchievement
+                        )
+                    }
                 } else {
                     s = s.copy(
                         nextFloorBias = "manufacturer",

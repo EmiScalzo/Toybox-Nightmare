@@ -182,4 +182,28 @@ class ProgressionRepository(private val dao: ToyboxDao) {
             )
         )
     }
+
+    suspend fun recordSolvedLorePuzzle(templateId: String): Int {
+        val current = dao.getProfile() ?: PlayerProfileEntity()
+        val set = current.solvedLorePuzzles.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+        set.add(templateId)
+        dao.upsertProfile(current.copy(solvedLorePuzzles = set.joinToString(",")))
+        return set.size
+    }
+
+    suspend fun unlockBackpackTier(tierName: String) {
+        val current = dao.getProfile() ?: PlayerProfileEntity()
+        val set = current.unlockedBackpacks.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+        if (set.add(tierName)) {
+            dao.upsertProfile(current.copy(unlockedBackpacks = set.joinToString(",")))
+        }
+    }
+
+    suspend fun discoverRecipe(recipeId: String) {
+        val current = dao.getProfile() ?: PlayerProfileEntity()
+        val set = current.discoveredRecipes.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+        if (set.add(recipeId)) {
+            dao.upsertProfile(current.copy(discoveredRecipes = set.joinToString(",")))
+        }
+    }
 }

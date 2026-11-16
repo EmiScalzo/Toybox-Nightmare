@@ -80,24 +80,49 @@ object EnemyRelationshipSystem {
                 }
 
                 EnemyRole.PROTECTOR -> {
-                    val ally = enemies.firstOrNull { it.id == e.protectedAllyId && it.hp > 0f }
-                    if (ally != null) {
-                        // Position between player and protected ally
-                        val midX = (ally.x + s.playerX) * 0.45f
-                        val midY = (ally.y + s.playerY) * 0.45f
-                        val dx = midX - e.x
-                        val dy = midY - e.y
+                    val cage = e.protectedCageId?.let { cid ->
+                        s.roomInteractables.firstOrNull { it.id == cid && !it.destroyed }
+                    }
+                    if (cage != null) {
+                        // Position tightly between player and the caged pet to shield the cage
+                        val pdx = s.playerX - cage.x
+                        val pdy = s.playerY - cage.y
+                        val pd = hypot(pdx, pdy).coerceAtLeast(1f)
+                        val guardX = (cage.x + (pdx / pd) * 54f).coerceIn(WALL_THICKNESS + e.radius, ARENA_W - WALL_THICKNESS - e.radius)
+                        val guardY = (cage.y + (pdy / pd) * 54f).coerceIn(WALL_THICKNESS + e.radius, ARENA_H - WALL_THICKNESS - e.radius)
+                        val dx = guardX - e.x
+                        val dy = guardY - e.y
                         val d = hypot(dx, dy).coerceAtLeast(1f)
-                        if (d > 14f) {
+                        if (d > 10f) {
                             e = e.copy(
                                 x = (e.x + (dx / d) * e.type.speed * 1.15f * dt).coerceIn(WALL_THICKNESS + e.radius, ARENA_W - WALL_THICKNESS - e.radius),
                                 y = (e.y + (dy / d) * e.type.speed * 1.15f * dt).coerceIn(WALL_THICKNESS + e.radius, ARENA_H - WALL_THICKNESS - e.radius)
                             )
                         }
-                    } else if (e.protectedAllyId != null && !e.enraged) {
-                        e = e.copy(enraged = true, protectedAllyId = null)
+                    } else if (e.protectedCageId != null && !e.enraged) {
+                        e = e.copy(enraged = true, protectedCageId = null)
                         events = (events + EngineEventType.ENEMY_PROTECTED_ALLY.key).takeLast(12)
-                        banner = RunUiBanner("${e.type.displayName} Enfurecido", "Su protegido cayó; ataca sin control.", 0xFFD13B42, 2.2f)
+                        banner = RunUiBanner("${e.type.displayName} Furioso", "Destruiste la jaula que custodiaba.", 0xFFD13B42, 2.2f)
+                    } else {
+                        val ally = enemies.firstOrNull { it.id == e.protectedAllyId && it.hp > 0f }
+                        if (ally != null) {
+                            // Position between player and protected ally
+                            val midX = (ally.x + s.playerX) * 0.45f
+                            val midY = (ally.y + s.playerY) * 0.45f
+                            val dx = midX - e.x
+                            val dy = midY - e.y
+                            val d = hypot(dx, dy).coerceAtLeast(1f)
+                            if (d > 14f) {
+                                e = e.copy(
+                                    x = (e.x + (dx / d) * e.type.speed * 1.15f * dt).coerceIn(WALL_THICKNESS + e.radius, ARENA_W - WALL_THICKNESS - e.radius),
+                                    y = (e.y + (dy / d) * e.type.speed * 1.15f * dt).coerceIn(WALL_THICKNESS + e.radius, ARENA_H - WALL_THICKNESS - e.radius)
+                                )
+                            }
+                        } else if (e.protectedAllyId != null && !e.enraged) {
+                            e = e.copy(enraged = true, protectedAllyId = null)
+                            events = (events + EngineEventType.ENEMY_PROTECTED_ALLY.key).takeLast(12)
+                            banner = RunUiBanner("${e.type.displayName} Enfurecido", "Su protegido cayó; ataca sin control.", 0xFFD13B42, 2.2f)
+                        }
                     }
                 }
 

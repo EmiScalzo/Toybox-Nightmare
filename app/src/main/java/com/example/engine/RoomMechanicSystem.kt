@@ -62,18 +62,25 @@ object RoomMechanicSystem {
                 s = stepVanishingFloor(s, dt, damagePlayerFn)
             }
             RoomMechanic.SHIFTING_DOORS -> {
-                val nextT = s.doorShiftTimer - dt
-                if (nextT <= 0f) {
-                    val rotated = s.doorMapping.mapKeys { (physWall, _) -> rotateClockwise(physWall) }
-                    s = s.copy(
-                        doorMapping = rotated,
-                        doorShiftTimer = 5.5f,
-                        activeBanner = if (s.activeBanner == null) {
-                            RunUiBanner("Puertas Cambiantes", "Los marcos de salida han rotado de muro.", 0xFFC89948, 1.8f)
-                        } else s.activeBanner
-                    )
+                if (s.currentRoom.cleared) {
+                    val identity = Direction.entries.associateWith { it }
+                    if (s.doorMapping != identity) {
+                        s = s.copy(doorMapping = identity, doorShiftTimer = 5.5f)
+                    }
                 } else {
-                    s = s.copy(doorShiftTimer = nextT)
+                    val nextT = s.doorShiftTimer - dt
+                    if (nextT <= 0f) {
+                        val rotated = s.doorMapping.mapKeys { (physWall, _) -> rotateClockwise(physWall) }
+                        s = s.copy(
+                            doorMapping = rotated,
+                            doorShiftTimer = 5.5f,
+                            activeBanner = if (s.activeBanner == null) {
+                                RunUiBanner("Puertas Cambiantes", "Los marcos de salida han rotado de muro.", 0xFFC89948, 1.8f)
+                            } else s.activeBanner
+                        )
+                    } else {
+                        s = s.copy(doorShiftTimer = nextT)
+                    }
                 }
             }
             RoomMechanic.FLICKERING_LIGHTS -> {

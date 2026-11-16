@@ -117,6 +117,10 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
                         onInspectCompanion = vm::inspectCompanion,
                         onResolveCompanionDialog = vm::resolveCompanionDialog,
                         onResolveManufacturerOffer = vm::resolveManufacturerOffer,
+                        onUseBackpackItem = vm::useBackpackItem,
+                        onDiscardBackpackItem = vm::discardBackpackItem,
+                        onCraftBackpack = vm::craftBackpack,
+                        onDismissArchiveDiscovery = vm::dismissArchiveDiscovery,
                         onAbandonRun = vm::abandonRun
                     )
                 }
@@ -148,6 +152,11 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
             )
 
             AppRoute.COLLECTION_ALBUM -> CollectionAlbumScreen(
+                discoveredKeys = discoveredKeys,
+                onBack = { vm.navigate(AppRoute.MAIN_MENU) }
+            )
+
+            AppRoute.WONDERLAND_ARCHIVE -> WonderlandArchiveScreen(
                 discoveredKeys = discoveredKeys,
                 onBack = { vm.navigate(AppRoute.MAIN_MENU) }
             )

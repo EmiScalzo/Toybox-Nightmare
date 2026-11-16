@@ -25,6 +25,7 @@ enum class AppRoute {
     RUN_SUMMARY,
     ACHIEVEMENT_BOOK,
     COLLECTION_ALBUM,
+    WONDERLAND_ARCHIVE,
     CHALLENGES,
     OPTIONS,
     CREDITS
@@ -92,7 +93,21 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
     private val engine = GameEngine(
         sfx = sfx,
         onDiscovery = { cat, id ->
-            viewModelScope.launch { repository.discover(cat, id) }
+            viewModelScope.launch {
+                repository.discover(cat, id)
+                if (cat == "archive") {
+                    val count = discoveredKeys.value.count { it.startsWith("archive:") } + 1
+                    if (count >= 10) {
+                        val unlocked = repository.unlockAchievement("ach_archive_10")
+                        if (unlocked != null) {
+                            _newlyUnlockedAchievements.update { it + unlocked }
+                            _runState.update { st ->
+                                st?.copy(unlockedAchievementsThisRun = st.unlockedAchievementsThisRun + unlocked)
+                            }
+                        }
+                    }
+                }
+            }
         },
         onAchievement = { achId ->
             viewModelScope.launch {
@@ -113,6 +128,26 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
         },
         onManufacturerTrust = { accepted ->
             viewModelScope.launch { repository.recordManufacturerDecision(accepted) }
+        },
+        onLorePuzzleSolved = { templateId ->
+            viewModelScope.launch {
+                val solvedCount = repository.recordSolvedLorePuzzle(templateId)
+                if (solvedCount >= 5) {
+                    val unlocked = repository.unlockAchievement("ach_lore_puzzle_5")
+                    if (unlocked != null) {
+                        _newlyUnlockedAchievements.update { it + unlocked }
+                        _runState.update { st ->
+                            st?.copy(unlockedAchievementsThisRun = st.unlockedAchievementsThisRun + unlocked)
+                        }
+                    }
+                }
+            }
+        },
+        onUnlockBackpack = { tier ->
+            viewModelScope.launch { repository.unlockBackpackTier(tier.name) }
+        },
+        onDiscoverRecipe = { recipeId ->
+            viewModelScope.launch { repository.discoverRecipe(recipeId) }
         }
     )
 
@@ -382,6 +417,22 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resolveManufacturerOffer(offerId: String?) {
         _runState.update { st -> st?.let { engine.resolveManufacturerOffer(it, offerId) } }
+    }
+
+    fun useBackpackItem(uid: Long) {
+        _runState.update { st -> st?.let { engine.useBackpackItem(it, uid) } }
+    }
+
+    fun discardBackpackItem(uid: Long) {
+        _runState.update { st -> st?.let { engine.discardBackpackItem(it, uid) } }
+    }
+
+    fun craftBackpack(recipe: BackpackRecipe) {
+        _runState.update { st -> st?.let { engine.craftBackpack(it, recipe) } }
+    }
+
+    fun dismissArchiveDiscovery() {
+        _runState.update { st -> st?.let { engine.dismissArchiveDiscovery(it) } }
     }
 
     fun abandonRun() {

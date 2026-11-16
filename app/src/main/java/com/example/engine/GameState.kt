@@ -49,6 +49,7 @@ data class ActiveEnemy(
     val disorganized: Boolean = false,
     val fleeing: Boolean = false,
     val protectedAllyId: Long? = null,
+    val protectedCageId: Long? = null,
     val role: EnemyRole = EnemyRole.STANDARD,
     val faction: EnemyFaction = EnemyFaction.VOID_SHADOW
 )
@@ -63,7 +64,9 @@ enum class PickupKind {
     PASSIVE_ITEM_PEDESTAL,
     COMPANION_SHRINE,
     MATERIAL,
-    GEAR_TOKEN
+    GEAR_TOKEN,
+    BACKPACK_ITEM,
+    BACKPACK_TIER
 }
 
 data class GroundPickup(
@@ -251,6 +254,15 @@ data class ManufacturerNpcState(
     val interacted: Boolean = false
 )
 
+data class SavedRoomState(
+    val roomInteractables: List<RoomInteractable> = emptyList(),
+    val pickups: List<GroundPickup> = emptyList(),
+    val roomAnomalies: List<RoomAnomaly> = emptyList(),
+    val roomObjective: RoomObjectiveState? = null,
+    val manufacturerNpc: ManufacturerNpcState? = null,
+    val alarmBellPos: Pair<Float, Float>? = null
+)
+
 data class GameRunState(
     val isActive: Boolean = false,
     val isPaused: Boolean = false,
@@ -362,5 +374,15 @@ data class GameRunState(
     val recentEngineEvents: List<String> = emptyList(),
     val partReinforcedRooms: Map<BodyZone, Int> = emptyMap(),
     val modifiedArmExplosiveGears: Boolean = false,
-    val alarmBellPos: Pair<Float, Float>? = null
+    val alarmBellPos: Pair<Float, Float>? = null,
+
+    // Ampliacion: Lore Rooms, Interactive Puzzles, Backpack & Wonderland Archive
+    val loreRoom: LoreRoomState? = null,
+    val loreRoomsByCoord: Map<GridCoord, LoreRoomState> = emptyMap(),
+    val savedRoomsByCoord: Map<GridCoord, SavedRoomState> = emptyMap(),
+    val backpackTier: BackpackTier? = null,
+    val backpackItems: List<BackpackSlotItem> = emptyList(),
+    val pendingArchiveDiscovery: PendingArchiveDiscovery? = null,
+    val unlockedArchiveIdsThisRun: Set<String> = emptySet(),
+    val lorePuzzlesSolvedThisRun: Int = 0
 )

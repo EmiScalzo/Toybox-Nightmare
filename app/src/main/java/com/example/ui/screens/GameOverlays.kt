@@ -26,13 +26,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.catalog.AmpliacionCatalog
 import com.example.data.catalog.GameCatalog
+import com.example.data.model.BackpackItemKind
+import com.example.data.model.BackpackRecipe
+import com.example.data.model.BackpackSlotItem
+import com.example.data.model.BackpackTier
 import com.example.data.model.BodyZone
 import com.example.data.model.CompanionId
 import com.example.data.model.ConsumableType
 import com.example.data.model.ManufacturerEncounter
+import com.example.data.model.PendingArchiveDiscovery
 import com.example.data.model.RepairActionMode
 import com.example.data.model.RepairMaterial
 import com.example.data.model.RepairMinigameType
@@ -354,6 +363,14 @@ fun ShopDialog(
                         val pt = GameCatalog.partById(offer.itemId)
                         PixelArtSprites.forBodyPart(pt.id, pt.zone)
                     }
+                    offer.itemId?.startsWith("backpack_item:") == true -> {
+                        val bk = runCatching { BackpackItemKind.valueOf(offer.itemId.removePrefix("backpack_item:")) }.getOrNull()
+                        bk?.let { PixelArtSprites.forBackpackItem(it) }
+                    }
+                    offer.itemId?.startsWith("backpack_tier:") == true -> {
+                        val bt = runCatching { BackpackTier.valueOf(offer.itemId.removePrefix("backpack_tier:")) }.getOrNull()
+                        bt?.let { PixelArtSprites.forBackpackTier(it) }
+                    }
                     offer.itemId != null -> PixelArtSprites.forPassiveItem(offer.itemId)
                     else -> null
                 }
@@ -403,9 +420,11 @@ fun RepairBenchDialog(
     state: GameRunState,
     onRepairZone: (BodyZone?) -> Unit,
     onStartRepairMinigame: (BodyZone, RepairActionMode) -> Unit,
+    onCraftBackpack: (BackpackRecipe) -> Unit,
     onClose: () -> Unit
 ) {
     var selectedMode by remember { mutableStateOf(RepairActionMode.REPAIR) }
+    var craftBackpacksTab by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -414,7 +433,7 @@ fun RepairBenchDialog(
         contentAlignment = Alignment.Center
     ) {
         ToyboxFrameCard(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp).heightIn(max = 620.dp),
+            modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp).heightIn(max = 640.dp),
             borderColor = TarnishedBrass
         ) {
             Row(
@@ -425,13 +444,17 @@ fun RepairBenchDialog(
                 Text("MESA DE COSTURA", style = MaterialTheme.typography.headlineMedium, color = TarnishedBrass)
                 Text("${state.buttons} ●", style = MaterialTheme.typography.labelLarge, color = AgedIvory)
             }
-            Text(selectedMode.desc, style = MaterialTheme.typography.bodyMedium, color = Parchment)
+            Text(
+                text = if (craftBackpacksTab) "Cose mochilas con materiales del taller para llevar más repuestos." else selectedMode.desc,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Parchment
+            )
 
             Spacer(Modifier.height(8.dp))
-            // Action mode tabs: Reparar / Reforzar / Modificar
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            // Action mode tabs: Reparar / Reforzar / Modificar / Mochilas
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
                 RepairActionMode.entries.forEach { mode ->
-                    val active = mode == selectedMode
+                    val active = !craftBackpacksTab && mode == selectedMode
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -440,12 +463,29 @@ fun RepairBenchDialog(
                             .background(if (active) CrimsonBlood else AgedWoodMid)
                             .border(1.dp, if (active) TarnishedBrass else AgedWoodLight, CutCornerShape(4.dp))
                             .testTag("repair_mode_${mode.name}")
-                            .clickable { selectedMode = mode }
-                            .padding(vertical = 8.dp, horizontal = 6.dp),
+                            .clickable {
+                                craftBackpacksTab = false
+                                selectedMode = mode
+                            }
+                            .padding(vertical = 8.dp, horizontal = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(mode.displayName, style = MaterialTheme.typography.labelLarge, color = AgedIvory)
+                        Text(mode.displayName, style = MaterialTheme.typography.labelMedium, color = AgedIvory, maxLines = 1)
                     }
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clip(CutCornerShape(4.dp))
+                        .background(if (craftBackpacksTab) CrimsonBlood else AgedWoodMid)
+                        .border(1.dp, if (craftBackpacksTab) TarnishedBrass else AgedWoodLight, CutCornerShape(4.dp))
+                        .testTag("repair_mode_BACKPACK")
+                        .clickable { craftBackpacksTab = true }
+                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Mochilas", style = MaterialTheme.typography.labelMedium, color = AgedIvory, maxLines = 1)
                 }
             }
 
@@ -487,50 +527,138 @@ fun RepairBenchDialog(
 
             Column(
                 modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                BodyZone.entries.forEach { z ->
-                    val part = state.equippedParts[z] ?: return@forEach
-                    val needsRepair = part.isDetached || part.durability < part.def.maxDurability
-                    val canOperate = (needsRepair || selectedMode != RepairActionMode.REPAIR) && state.buttons >= 1
-                    val reinforcedLeft = state.partReinforcedRooms[z] ?: 0
+                if (craftBackpacksTab) {
+                    val currentPack = state.backpackTier
                     Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                            .background(AgedWoodMid, CutCornerShape(4.dp))
-                            .border(1.dp, if (canOperate) MutedMoss else AgedWoodLight, CutCornerShape(4.dp))
-                            .testTag("repair_zone_${z.name}")
-                            .clickable(enabled = canOperate) { onStartRepairMinigame(z, selectedMode) }
-                            .padding(8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .background(CharcoalBlack.copy(alpha = 0.7f), CutCornerShape(4.dp))
+                            .border(1.dp, TarnishedBrassDim, CutCornerShape(4.dp))
+                            .padding(8.dp)
                     ) {
-                        Image(
-                            bitmap = PixelArtSprites.forBodyPart(part.def.id, z),
-                            contentDescription = part.def.name,
-                            filterQuality = FilterQuality.None,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(30.dp).padding(end = 8.dp)
-                        )
+                        if (currentPack != null) {
+                            Image(
+                                bitmap = PixelArtSprites.forBackpackTier(currentPack),
+                                contentDescription = currentPack.displayName,
+                                filterQuality = FilterQuality.None,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(30.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Backpack,
+                                contentDescription = "Sin mochila",
+                                tint = ParchmentDark,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("${z.displayName}: ${part.def.name}", style = MaterialTheme.typography.titleMedium, color = AgedIvory)
-                            val extra = if (reinforcedLeft > 0) " • Reforzado ($reinforcedLeft)" else ""
-                            Text("${part.wearState.displayName} (${part.durability}/${part.def.maxDurability})$extra", style = MaterialTheme.typography.bodyMedium, color = ParchmentDark)
+                            Text(
+                                text = if (currentPack != null) "Equipada: ${currentPack.displayName} (${currentPack.capacity} esp.)" else "Equipada: Ninguna (0 esp.)",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = AgedIvory
+                            )
+                            Text(
+                                text = currentPack?.specialTrait ?: "Fabrica aquí tu primera bolsa o consíguela en el Puesto.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = ParchmentDark
+                            )
                         }
-                        if (needsRepair && state.buttons >= 2) {
-                            TextButton(
-                                onClick = { onRepairZone(z) },
-                                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
-                            ) {
-                                Text("Rápido 2●", style = MaterialTheme.typography.labelSmall, color = ParchmentDark)
+                    }
+
+                    AmpliacionCatalog.backpackRecipes.forEach { recipe ->
+                        val equippedAlready = state.backpackTier == recipe.tier
+                        val canCraft = BackpackSystem.canCraft(state, recipe)
+                        val reqText = recipe.requirements.entries.joinToString(" • ") { (mat, qty) ->
+                            val have = state.materials[mat] ?: 0
+                            "${mat.displayName.split(" ").first()} $have/$qty"
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 56.dp)
+                                .background(AgedWoodMid, CutCornerShape(4.dp))
+                                .border(1.2.dp, if (equippedAlready) MutedMoss else if (canCraft) TarnishedBrass else AgedWoodLight, CutCornerShape(4.dp))
+                                .testTag("craft_backpack_${recipe.tier.name}")
+                                .clickable(enabled = canCraft) { onCraftBackpack(recipe) }
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Image(
+                                bitmap = PixelArtSprites.forBackpackTier(recipe.tier),
+                                contentDescription = recipe.tier.displayName,
+                                filterQuality = FilterQuality.None,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(32.dp).padding(end = 8.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("${recipe.tier.displayName} (${recipe.tier.capacity} esp.)", style = MaterialTheme.typography.titleMedium, color = AgedIvory)
+                                Text(recipe.description, style = MaterialTheme.typography.bodySmall, color = Parchment)
+                                Text("Costo: ${recipe.buttonCost} ● | $reqText", style = MaterialTheme.typography.labelSmall, color = if (canCraft) TarnishedBrass else ParchmentDark)
                             }
+                            Text(
+                                text = when {
+                                    equippedAlready -> "Equipada"
+                                    canCraft -> "Fabricar"
+                                    else -> "Falta"
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                                color = when {
+                                    equippedAlready -> MutedMoss
+                                    canCraft -> TarnishedBrass
+                                    else -> CrimsonBright
+                                }
+                            )
                         }
-                        Text(
-                            text = if (canOperate) "Taller 1●" else "Intacto",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (canOperate) TarnishedBrass else MutedMoss
-                        )
+                    }
+                } else {
+                    BodyZone.entries.forEach { z ->
+                        val part = state.equippedParts[z] ?: return@forEach
+                        val needsRepair = part.isDetached || part.durability < part.def.maxDurability
+                        val canOperate = (needsRepair || selectedMode != RepairActionMode.REPAIR) && state.buttons >= 1
+                        val reinforcedLeft = state.partReinforcedRooms[z] ?: 0
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 48.dp)
+                                .background(AgedWoodMid, CutCornerShape(4.dp))
+                                .border(1.dp, if (canOperate) MutedMoss else AgedWoodLight, CutCornerShape(4.dp))
+                                .testTag("repair_zone_${z.name}")
+                                .clickable(enabled = canOperate) { onStartRepairMinigame(z, selectedMode) }
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Image(
+                                bitmap = PixelArtSprites.forBodyPart(part.def.id, z),
+                                contentDescription = part.def.name,
+                                filterQuality = FilterQuality.None,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(30.dp).padding(end = 8.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("${z.displayName}: ${part.def.name}", style = MaterialTheme.typography.titleMedium, color = AgedIvory)
+                                val extra = if (reinforcedLeft > 0) " • Reforzado ($reinforcedLeft)" else ""
+                                Text("${part.wearState.displayName} (${part.durability}/${part.def.maxDurability})$extra", style = MaterialTheme.typography.bodyMedium, color = ParchmentDark)
+                            }
+                            if (needsRepair && state.buttons >= 2) {
+                                TextButton(
+                                    onClick = { onRepairZone(z) },
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                                ) {
+                                    Text("Rápido 2●", style = MaterialTheme.typography.labelSmall, color = ParchmentDark)
+                                }
+                            }
+                            Text(
+                                text = if (canOperate) "Taller 1●" else "Intacto",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (canOperate) TarnishedBrass else MutedMoss
+                            )
+                        }
                     }
                 }
             }
@@ -538,14 +666,16 @@ fun RepairBenchDialog(
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ToyboxPlaqueButton(text = "Cerrar", onClick = onClose, modifier = Modifier.weight(1f), testTag = "repair_close_btn")
-                ToyboxPlaqueButton(
-                    text = "Reparar Todo (5 ●)",
-                    primary = true,
-                    enabled = state.buttons >= 5,
-                    onClick = { onRepairZone(null) },
-                    modifier = Modifier.weight(1f),
-                    testTag = "repair_all_btn"
-                )
+                if (!craftBackpacksTab) {
+                    ToyboxPlaqueButton(
+                        text = "Reparar Todo (5 ●)",
+                        primary = true,
+                        enabled = state.buttons >= 5,
+                        onClick = { onRepairZone(null) },
+                        modifier = Modifier.weight(1f),
+                        testTag = "repair_all_btn"
+                    )
+                }
             }
         }
     }
@@ -1105,6 +1235,352 @@ fun PauseOverlayDialog(
             if (selectedTab != 0) {
                 Spacer(Modifier.height(10.dp))
                 ToyboxPlaqueButton("Reanudar", Icons.Default.PlayArrow, onResume, primary = true, modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun BackpackDialog(
+    state: GameRunState,
+    onUseItem: (Long) -> Unit,
+    onDiscardItem: (Long) -> Unit,
+    onClose: () -> Unit
+) {
+    val used = BackpackSystem.usedSlots(state)
+    val cap = BackpackSystem.capacity(state)
+    val inCombat = BackpackSystem.isInCombat(state)
+    var selectedUid by remember(state.backpackItems) {
+        mutableStateOf(state.backpackItems.firstOrNull()?.uid)
+    }
+    val selectedSlot: BackpackSlotItem? = state.backpackItems.find { it.uid == selectedUid } ?: state.backpackItems.firstOrNull()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CharcoalBlack.copy(alpha = 0.88f))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val currentPack = state.backpackTier
+        ToyboxFrameCard(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 470.dp).heightIn(max = 650.dp),
+            borderColor = currentPack?.rarity?.color ?: AgedWoodLight
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(CharcoalBlack, CutCornerShape(4.dp))
+                        .border(1.5.dp, currentPack?.rarity?.color ?: AgedWoodLight, CutCornerShape(4.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (currentPack != null) {
+                        Image(
+                            bitmap = PixelArtSprites.forBackpackTier(currentPack),
+                            contentDescription = currentPack.displayName,
+                            filterQuality = FilterQuality.None,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Backpack,
+                            contentDescription = "Sin mochila",
+                            tint = ParchmentDark.copy(alpha = 0.6f),
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = currentPack?.displayName?.uppercase() ?: "SIN MOCHILA EQUIPADA",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (currentPack != null) TarnishedBrass else AmberWarning
+                    )
+                    Text(
+                        text = currentPack?.specialTrait ?: "No puedes almacenar objetos hasta conseguir una mochila.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Parchment
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .background(CharcoalBlack, CutCornerShape(4.dp))
+                        .border(1.dp, if (currentPack == null || used >= cap) CrimsonBright else TarnishedBrass, CutCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("$used/$cap esp.", style = MaterialTheme.typography.labelLarge, color = AgedIvory)
+                }
+            }
+
+            if (currentPack == BackpackTier.BOTTOMLESS_PACK && used >= 6) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Carga pesada (6+ espacios): -10% velocidad de movimiento.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AmberWarning
+                )
+            }
+
+            StitchedDivider(Modifier.padding(vertical = 8.dp))
+
+            if (currentPack == null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(CharcoalBlack.copy(alpha = 0.65f), CutCornerShape(5.dp))
+                        .border(1.dp, TarnishedBrassDim, CutCornerShape(5.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("CÓMO CONSEGUIR UNA MOCHILA", style = MaterialTheme.typography.labelLarge, color = TarnishedBrass)
+                    Text("• Puesto de Botones: compra Bolsillo Cosido o Mochila Infantil.", style = MaterialTheme.typography.bodySmall, color = Parchment)
+                    Text("• Mesa de Costura (pestaña Mochilas): fabrica con botones y materiales.", style = MaterialTheme.typography.bodySmall, color = Parchment)
+                    Text("• El Fabricante: acepta un pacto por su Mochila sellada.", style = MaterialTheme.typography.bodySmall, color = Parchment)
+                    Text("• Exploración: rompe Cajas Selladas o abre Salas de Tesoro/Secretas.", style = MaterialTheme.typography.bodySmall, color = Parchment)
+                }
+            } else {
+                // Visual Slot Grid (Toy Compartment Slots)
+                val emptySlots = (cap - used).coerceAtLeast(0)
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    state.backpackItems.forEach { slot ->
+                        val isSelected = selectedSlot?.uid == slot.uid
+                        val cellW = (58 + (slot.kind.slotsRequired - 1) * 32).dp
+                        Box(
+                            modifier = Modifier
+                                .width(cellW)
+                                .height(62.dp)
+                                .clip(CutCornerShape(4.dp))
+                                .background(if (isSelected) AgedWoodLight else AgedWoodMid)
+                                .border(
+                                    if (isSelected) 2.dp else 1.2.dp,
+                                    if (isSelected) TarnishedBrass else slot.kind.rarity.color,
+                                    CutCornerShape(4.dp)
+                                )
+                                .testTag("backpack_slot_${slot.uid}")
+                                .clickable { selectedUid = slot.uid }
+                                .padding(4.dp)
+                        ) {
+                            Image(
+                                bitmap = PixelArtSprites.forBackpackItem(slot.kind),
+                                contentDescription = slot.kind.displayName,
+                                filterQuality = FilterQuality.None,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(32.dp).align(Alignment.Center)
+                            )
+                            Text(
+                                text = "${slot.kind.slotsRequired}E",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = ParchmentDark,
+                                modifier = Modifier.align(Alignment.TopStart)
+                            )
+                            if (slot.quantity > 1) {
+                                Text(
+                                    text = "x${slot.quantity}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = TarnishedBrass,
+                                    modifier = Modifier.align(Alignment.BottomEnd)
+                                )
+                            }
+                        }
+                    }
+                    repeat(emptySlots) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 58.dp, height = 62.dp)
+                                .background(CharcoalBlack.copy(alpha = 0.65f), CutCornerShape(4.dp))
+                                .border(1.dp, AgedWoodLight.copy(alpha = 0.6f), CutCornerShape(4.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Vacío", style = MaterialTheme.typography.labelSmall, color = ParchmentDark.copy(alpha = 0.55f))
+                        }
+                    }
+                }
+
+                StitchedDivider(Modifier.padding(vertical = 8.dp))
+
+                if (selectedSlot == null) {
+                    Text(
+                        text = "Tu mochila está vacía. Explora habitaciones de recuerdo, cajas o el Puesto para guardar objetos.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ParchmentDark
+                    )
+                } else {
+                val blockedByCombat = inCombat && !selectedSlot.kind.usableInCombat
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(CharcoalBlack.copy(alpha = 0.65f), CutCornerShape(5.dp))
+                        .border(1.dp, selectedSlot.kind.rarity.color, CutCornerShape(5.dp))
+                        .padding(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${selectedSlot.kind.displayName} (x${selectedSlot.quantity})",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = AgedIvory,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${selectedSlot.kind.slotsRequired} esp.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TarnishedBrass
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(selectedSlot.kind.description, style = MaterialTheme.typography.bodyMedium, color = Parchment)
+                    if (selectedSlot.kind == BackpackItemKind.SMALL_PART_SPARE) {
+                        Text(
+                            text = "Estado almacenado: ${selectedSlot.storedDurability}% (${if (state.backpackTier == BackpackTier.MANUFACTURER_PACK) "Protegido" else "Se desgasta al cambiar sala"})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (state.backpackTier == BackpackTier.MANUFACTURER_PACK) MutedMoss else AmberWarning
+                        )
+                    }
+                    if (blockedByCombat) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Bloqueado en combate activo. Limpia la sala para usar este objeto.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CrimsonBright
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        ToyboxPlaqueButton(
+                            text = "Descartar",
+                            icon = Icons.Default.DeleteOutline,
+                            onClick = { onDiscardItem(selectedSlot.uid) },
+                            modifier = Modifier.weight(1f),
+                            testTag = "backpack_discard_btn"
+                        )
+                        ToyboxPlaqueButton(
+                            text = if (blockedByCombat) "En Combate" else "Usar Objeto",
+                            icon = Icons.Default.CheckCircle,
+                            primary = true,
+                            enabled = !blockedByCombat,
+                            onClick = { onUseItem(selectedSlot.uid) },
+                            modifier = Modifier.weight(1f),
+                            testTag = "backpack_use_btn"
+                        )
+                    }
+                }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            ToyboxPlaqueButton(
+                text = "Cerrar Mochila",
+                onClick = onClose,
+                modifier = Modifier.fillMaxWidth(),
+                testTag = "backpack_close_btn"
+            )
+        }
+    }
+}
+
+@Composable
+fun ArchiveDiscoveryDialog(
+    discovery: PendingArchiveDiscovery,
+    onDismiss: () -> Unit
+) {
+    var zoomed by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CharcoalBlack.copy(alpha = 0.90f))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        ToyboxFrameCard(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp).heightIn(max = 660.dp),
+            borderColor = TarnishedBrass
+        ) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = if (discovery.isNewlyUnlocked) "NUEVO DESCUBRIMIENTO DE ARCHIVO" else "RECUERDO RECUPERADO",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TarnishedBrass,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = discovery.entry.title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = AgedIvory,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "${discovery.entry.category.displayName} • ${discovery.entry.eraOrDate}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = ParchmentDark
+                )
+                Spacer(Modifier.height(10.dp))
+
+                Image(
+                    painter = painterResource(id = AIImageArchiveSystem.drawableForArchive(discovery.entry)),
+                    contentDescription = discovery.entry.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (zoomed) 310.dp else 195.dp)
+                        .clip(CutCornerShape(6.dp))
+                        .border(1.5.dp, TarnishedBrass, CutCornerShape(6.dp))
+                        .testTag("archive_discovery_image")
+                        .clickable { zoomed = !zoomed }
+                )
+                Text(
+                    text = if (zoomed) "Toca la imagen para reducir" else "Toca la imagen para ampliar",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ParchmentDark,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = discovery.entry.summary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Parchment,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                discovery.bonusText?.let { bonus ->
+                    Spacer(Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MutedMoss.copy(alpha = 0.25f), CutCornerShape(4.dp))
+                            .border(1.dp, MutedMoss, CutCornerShape(4.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(bonus, style = MaterialTheme.typography.labelMedium, color = AgedIvory)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                ToyboxPlaqueButton(
+                    text = "Guardar en Archivo de Wonderland",
+                    icon = Icons.Default.CollectionsBookmark,
+                    primary = true,
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "archive_discovery_save_btn"
+                )
             }
         }
     }

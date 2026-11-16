@@ -111,6 +111,7 @@ fun GameArenaCanvas(
             room.type == RoomType.REPAIR -> MutedMoss.copy(alpha = 0.72f)
             room.type == RoomType.CURSE || room.type == RoomType.BOSS || room.type == RoomType.FORBIDDEN -> CrimsonBright.copy(alpha = 0.65f)
             room.type == RoomType.TREASURE || room.type == RoomType.SECRET || room.type == RoomType.MANUFACTURER -> TarnishedBrass.copy(alpha = 0.75f)
+            room.type == RoomType.LORE -> Color(0xFF9E7AC8).copy(alpha = 0.80f)
             else -> TarnishedBrassDim.copy(alpha = 0.55f)
         }
         drawRect(
@@ -286,6 +287,20 @@ fun GameArenaCanvas(
                 drawCircle(CottonWhite.copy(alpha = 0.24f), ir * 1.7f, Offset(ix, iy))
             }
 
+            if (inter.type == InteractableType.COMPANION_CAGE && !inter.destroyed) {
+                val pulse = 0.55f + 0.35f * sin(state.elapsedSeconds * 5f + inter.id)
+                drawCircle(TarnishedBrass.copy(alpha = 0.20f * pulse), ir * 1.45f, Offset(ix, iy))
+                val trappedCid = CompanionId.entries[inter.variant % CompanionId.entries.size]
+                val compBmp = PixelArtSprites.forCompanion(trappedCid)
+                val compSz = ir * 1.35f
+                drawImage(
+                    image = compBmp,
+                    dstOffset = IntOffset((ix - compSz / 2f).toInt(), (iy - compSz / 2f).toInt()),
+                    dstSize = IntSize(compSz.toInt().coerceAtLeast(1), compSz.toInt().coerceAtLeast(1)),
+                    filterQuality = FilterQuality.None
+                )
+            }
+
             val bmp = PixelArtSprites.forInteractable(inter.type, active = inter.active, destroyed = inter.destroyed)
             val spriteSz = ir * 2.15f
             val rotDeg = if (inter.type == InteractableType.TOY_CAROUSEL && inter.active) state.elapsedSeconds * 180f else 0f
@@ -297,6 +312,92 @@ fun GameArenaCanvas(
                     alpha = if (inter.destroyed) 0.58f else 1f,
                     filterQuality = FilterQuality.None
                 )
+            }
+
+            if (inter.type == InteractableType.COMPANION_CAGE && !inter.destroyed && inter.hp < inter.maxHp) {
+                val ratio = (inter.hp / inter.maxHp.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                drawRect(CharcoalBlack, Offset(ix - asz(22f), iy - ir - asz(12f)), Size(asz(44f), 5f))
+                drawRect(TarnishedBrass, Offset(ix - asz(22f), iy - ir - asz(12f)), Size(asz(44f) * ratio, 5f))
+            }
+        }
+
+        // Lore Room Interactive Puzzle Props
+        state.loreRoom?.let { lore ->
+            for (prop in lore.props) {
+                if (prop.destroyed) continue
+                val lx = ax(prop.x)
+                val ly = ay(prop.y)
+                val lr = asz(prop.radius)
+
+                if (prop.kind == LorePropKind.ELECTRIFIED_ZONE) {
+                    if (!prop.activated) {
+                        val pulse = 0.45f + 0.4f * abs(sin(state.elapsedSeconds * 12f))
+                        drawCircle(Color(0xFF4CC9F0).copy(alpha = 0.25f * pulse), lr * 1.45f, Offset(lx, ly))
+                        drawCircle(Color(0xFF90E0EF).copy(alpha = pulse), lr * 1.3f, Offset(lx, ly), style = Stroke(2.5f))
+                    } else {
+                        drawCircle(MutedMoss.copy(alpha = 0.24f), lr * 1.2f, Offset(lx, ly))
+                    }
+                } else if (prop.kind == LorePropKind.FLOOR_SWITCH) {
+                    drawCircle(
+                        if (prop.activated) MutedMoss.copy(alpha = 0.35f) else CrimsonBright.copy(alpha = 0.30f),
+                        lr * 1.25f,
+                        Offset(lx, ly)
+                    )
+                } else if (!prop.solved && prop.kind != LorePropKind.FLOOR_TILE_TRAP) {
+                    val pulse = 0.45f + 0.3f * sin(state.elapsedSeconds * 4.5f + prop.id)
+                    val ringCol = if (prop.draggable) AmberWarning else TarnishedBrass
+                    drawCircle(ringCol.copy(alpha = 0.45f * pulse), lr * 1.18f, Offset(lx, ly), style = Stroke(2f))
+                } else if (prop.solved) {
+                    drawCircle(MutedMoss.copy(alpha = 0.35f), lr * 1.1f, Offset(lx, ly), style = Stroke(2f))
+                }
+
+                val bmp = PixelArtSprites.forLoreProp(prop)
+                val sprSz = lr * 2.1f
+                val rotDeg = when (prop.kind) {
+                    LorePropKind.ROTATABLE_PAINTING -> prop.stateInt * 90f
+                    LorePropKind.ROTATABLE_DOLL -> prop.stateInt * 90f
+                    else -> 0f
+                }
+                rotate(rotDeg, Offset(lx, ly)) {
+                    drawImage(
+                        image = bmp,
+                        dstOffset = IntOffset((lx - sprSz / 2f).toInt(), (ly - sprSz / 2f).toInt()),
+                        dstSize = IntSize(sprSz.toInt().coerceAtLeast(1), sprSz.toInt().coerceAtLeast(1)),
+                        filterQuality = FilterQuality.None
+                    )
+                }
+
+                // Draw visual clock hand for ADJUSTABLE_CLOCK
+                if (prop.kind == LorePropKind.ADJUSTABLE_CLOCK) {
+                    val hourRad = when (prop.stateInt) {
+                        12 -> -PI.toFloat() / 2f
+                        3 -> 0f
+                        6 -> PI.toFloat() / 2f
+                        else -> PI.toFloat()
+                    }
+                    val handLen = lr * 0.65f
+                    drawLine(
+                        color = CrimsonBright,
+                        start = Offset(lx, ly),
+                        end = Offset(lx + cos(hourRad) * handLen, ly + sin(hourRad) * handLen),
+                        strokeWidth = 3f
+                    )
+                }
+
+                // Draw facing arrow dot for ROTATABLE_DOLL
+                if (prop.kind == LorePropKind.ROTATABLE_DOLL) {
+                    val dirRad = when (prop.stateInt % 4) {
+                        0 -> -PI.toFloat() / 2f
+                        1 -> 0f
+                        2 -> PI.toFloat() / 2f
+                        else -> PI.toFloat()
+                    }
+                    drawCircle(
+                        color = TarnishedBrass,
+                        radius = asz(4.5f),
+                        center = Offset(lx + cos(dirRad) * (lr * 0.9f), ly + sin(dirRad) * (lr * 0.9f))
+                    )
+                }
             }
         }
 
@@ -518,6 +619,32 @@ fun GameArenaCanvas(
                         filterQuality = FilterQuality.None
                     )
                 }
+                PickupKind.BACKPACK_ITEM -> {
+                    val bpKind = runCatching { BackpackItemKind.valueOf(p.valueStr) }.getOrNull() ?: BackpackItemKind.CRAFTING_BUNDLE
+                    val bmp = PixelArtSprites.forBackpackItem(bpKind)
+                    val sz = asz(34f)
+                    drawCircle(Color(0xFF9E7AC8).copy(alpha = 0.32f), asz(20f), Offset(px, py))
+                    drawCircle(TarnishedBrass.copy(alpha = 0.55f), asz(18f), Offset(px, py), style = Stroke(1.8f))
+                    drawImage(
+                        bmp,
+                        dstOffset = IntOffset((px - sz / 2f).toInt(), (py - sz / 2f + bobFloat).toInt()),
+                        dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                        filterQuality = FilterQuality.None
+                    )
+                }
+                PickupKind.BACKPACK_TIER -> {
+                    val bpTier = runCatching { BackpackTier.valueOf(p.valueStr) }.getOrNull() ?: BackpackTier.STITCHED_POUCH
+                    val bmp = PixelArtSprites.forBackpackTier(bpTier)
+                    val sz = asz(38f)
+                    drawCircle(TarnishedBrass.copy(alpha = 0.36f), asz(24f), Offset(px, py))
+                    drawCircle(bpTier.rarity.color, asz(22f), Offset(px, py), style = Stroke(2.2f))
+                    drawImage(
+                        bmp,
+                        dstOffset = IntOffset((px - sz / 2f).toInt(), (py - sz / 2f + bobFloat).toInt()),
+                        dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                        filterQuality = FilterQuality.None
+                    )
+                }
             }
         }
 
@@ -599,6 +726,21 @@ fun GameArenaCanvas(
                 drawRect(CrimsonBright, Offset(ex - er, ey - spriteH * 0.55f - 8f), Size(er * 2f * ratio, 5f))
             }
 
+            // Cage guard visual tether
+            if (e.role == EnemyRole.PROTECTOR && e.protectedCageId != null) {
+                val guardedCage = state.roomInteractables.firstOrNull { it.id == e.protectedCageId && !it.destroyed }
+                if (guardedCage != null) {
+                    drawLine(
+                        color = SlateBlue.copy(alpha = 0.55f),
+                        start = Offset(ex, ey),
+                        end = Offset(ax(guardedCage.x), ay(guardedCage.y)),
+                        strokeWidth = 2.2f,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
+                    )
+                    drawCircle(SlateBlue.copy(alpha = 0.45f), er * 1.25f, Offset(ex, ey), style = Stroke(2f))
+                }
+            }
+
             // Enemy Relationship Badges (Leader, Protector, Coward, Repairer, Disorganized, Stolen Part)
             val badgeY = ey - spriteH * 0.55f - 14f
             when {
@@ -612,7 +754,7 @@ fun GameArenaCanvas(
                 e.role == EnemyRole.LEADER -> {
                     drawCircle(TarnishedBrass, asz(6f), Offset(ex, badgeY))
                 }
-                e.role == EnemyRole.PROTECTOR && e.type == EnemyType.BODYGUARD_BEAR -> {
+                e.role == EnemyRole.PROTECTOR -> {
                     drawCircle(SlateBlue, asz(5.5f), Offset(ex, badgeY))
                 }
                 e.role == EnemyRole.COWARD -> {
@@ -693,7 +835,7 @@ fun GameArenaCanvas(
         state.passiveItems.forEach { visionScale *= it.effects.visionBoost }
         if (state.activeCompanions.any { it.id == CompanionId.PAPER_MOTH }) visionScale *= 1.28f
         val lightR = asz(470f) * visionScale
-        val roomDarkBias = if (room.type == RoomType.REPAIR) 0.45f else 0.76f
+        val roomDarkBias = if (room.type == RoomType.REPAIR || room.type == RoomType.LORE) 0.46f else 0.76f
         val darkAlpha = (roomDarkBias * vignetteStrength).coerceIn(0.20f, 0.92f)
 
         drawRect(
@@ -1007,6 +1149,24 @@ private fun DrawScope.drawRoomDecorations(
         RoomType.FORBIDDEN -> {
             drawCircle(CrimsonBright.copy(alpha = 0.26f), asz(170f), Offset(ax(500f), ay(520f)), style = Stroke(4f))
             drawCircle(CrimsonBlood.copy(alpha = 0.22f), asz(115f), Offset(ax(500f), ay(520f)), style = dashStroke)
+        }
+        RoomType.LORE -> {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF9E7AC8).copy(alpha = 0.20f), TarnishedBrass.copy(alpha = 0.08f), Color.Transparent),
+                    center = Offset(ax(500f), ay(490f)),
+                    radius = asz(380f)
+                ),
+                radius = asz(380f),
+                center = Offset(ax(500f), ay(490f))
+            )
+            drawRoundRect(
+                color = AgedWoodLight.copy(alpha = 0.28f),
+                topLeft = Offset(ax(220f), ay(250f)),
+                size = Size(asz(560f), asz(520f)),
+                cornerRadius = CornerRadius(10f, 10f),
+                style = dashStroke
+            )
         }
         else -> {
             // Subtle room border stitching on some combat/event/secret rooms

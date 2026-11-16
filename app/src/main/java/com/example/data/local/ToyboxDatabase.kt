@@ -22,7 +22,10 @@ data class PlayerProfileEntity(
     val companionGrudges: String = "",
     val loreSeen: Boolean = false,
     val manufacturerAccepted: Int = 0,
-    val manufacturerRejected: Int = 0
+    val manufacturerRejected: Int = 0,
+    val discoveredRecipes: String = "",
+    val solvedLorePuzzles: String = "",
+    val unlockedBackpacks: String = "STITCHED_POUCH"
 )
 
 @Entity(tableName = "achievement_progress")
@@ -105,7 +108,7 @@ interface ToyboxDao {
         UnlockedCharacterEntity::class,
         RunHistoryEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class ToyboxDatabase : RoomDatabase() {
@@ -135,13 +138,21 @@ abstract class ToyboxDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE player_profile ADD COLUMN discoveredRecipes TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE player_profile ADD COLUMN solvedLorePuzzles TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE player_profile ADD COLUMN unlockedBackpacks TEXT NOT NULL DEFAULT 'STITCHED_POUCH'")
+            }
+        }
+
         fun getInstance(context: Context): ToyboxDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     ToyboxDatabase::class.java,
                     "toybox_nightmare.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { INSTANCE = it }
             }
         }
     }

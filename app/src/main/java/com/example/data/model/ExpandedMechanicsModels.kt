@@ -150,6 +150,12 @@ enum class InteractableType(
         "Tablas podridas a punto de ceder.",
         damage = 0f, affectsPlayer = false, affectsEnemies = false, destructible = true, maxHp = 45f, tags = listOf("destructible", "secret")
     ),
+    COMPANION_CAGE(
+        "Jaula de Mascota", InteractableCategory.DESTRUCTIBLE, Rarity.RARE,
+        "Una mascota atrapada detrás de barrotes. Destruye la jaula con tus bolitas o una bomba para rescatarla.",
+        "Los juguetes hostiles custodian a los pocos aliados que quedan.",
+        damage = 0f, affectsPlayer = false, affectsEnemies = false, destructible = true, maxHp = 28f, tags = listOf("destructible", "companion", "cage")
+    ),
 
     // D. Ambientales
     OIL_PUDDLE(

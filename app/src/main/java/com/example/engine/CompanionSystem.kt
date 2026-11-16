@@ -424,7 +424,8 @@ object CompanionSystem {
         state: GameRunState,
         room: RoomBlueprint,
         allocId: () -> Long,
-        sfx: SoundEffectsEngine
+        sfx: SoundEffectsEngine,
+        wasVisited: Boolean = room.visited
     ): GameRunState {
         var s = state
         val updatedRoom = room
@@ -546,13 +547,21 @@ object CompanionSystem {
             nextCompanions.add(c)
         }
 
-        // Spawn a random Companion Shrine in ~28% of peaceful Event/Start/Treasure rooms on floor >= 1 (if not already present)
-        if (updatedRoom.type in setOf(
+        // Spawn a random free Companion Shrine across any unvisited non-start/non-boss room (~16% chance) if no cage is in the room
+        val hasCage = s.roomInteractables.any { it.type == com.example.data.model.InteractableType.COMPANION_CAGE }
+        if (!hasCage &&
+            updatedRoom.type in setOf(
                 com.example.data.model.RoomType.COMBAT,
-                com.example.data.model.RoomType.EVENT
-            ) && !updatedRoom.visited && Random.nextFloat() < 0.24f
+                com.example.data.model.RoomType.EVENT,
+                com.example.data.model.RoomType.TREASURE,
+                com.example.data.model.RoomType.SECRET,
+                com.example.data.model.RoomType.LORE,
+                com.example.data.model.RoomType.FORBIDDEN
+            ) && !wasVisited && s.activeCompanions.size < 2 && Random.nextFloat() < 0.16f
         ) {
-            val pool = CompanionId.entries.filter { id -> s.activeCompanions.none { it.id == id } }
+            val pool = CompanionId.entries.filter { id ->
+                s.activeCompanions.none { it.id == id } && id !in s.pendingGrudgeCompanions
+            }
             val chosen = pool.randomOrNull()
             if (chosen != null) {
                 extraPickups.add(

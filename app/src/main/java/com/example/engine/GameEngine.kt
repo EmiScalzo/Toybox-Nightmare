@@ -21,7 +21,10 @@ class GameEngine(
     private val onAchievement: (id: String) -> Unit,
     private val onCompanionGrudge: (String) -> Unit = {},
     private val onClearCompanionGrudge: (String) -> Unit = {},
-    private val onManufacturerTrust: (Boolean) -> Unit = {}
+    private val onManufacturerTrust: (Boolean) -> Unit = {},
+    private val onLorePuzzleSolved: (String) -> Unit = {},
+    private val onUnlockBackpack: (BackpackTier) -> Unit = {},
+    private val onDiscoverRecipe: (String) -> Unit = {}
 ) {
     private var nextEntityId = 1L
     private fun allocId(): Long = nextEntityId++
@@ -60,16 +63,6 @@ class GameEngine(
         items.forEach { onDiscovery("item", it.id) }
 
         val synergies = GameCatalog.computeActiveSynergies(parts, items)
-        val startCompanionPick = listOf(
-            CompanionId.BUNNY,
-            CompanionId.BROKEN_SOLDIER,
-            CompanionId.FORGOTTEN_BEAR,
-            CompanionId.FACELESS_DOLL,
-            CompanionId.CLOCKWORK_CAT,
-            CompanionId.PAPER_MOTH,
-            CompanionId.WHISPER_PUPPET,
-            CompanionId.RUSTY_BALLERINA
-        ).random()
 
         return GameRunState(
             isActive = true,
@@ -89,15 +82,7 @@ class GameEngine(
             consumables = initialConsumables,
             buttons = if (difficulty == Difficulty.SUAVE) 6 else 3,
             pendingGrudgeCompanions = initialGrudges,
-            pickups = listOf(
-                GroundPickup(
-                    id = allocId(),
-                    kind = PickupKind.COMPANION_SHRINE,
-                    x = ARENA_W * 0.24f,
-                    y = ARENA_H * 0.26f,
-                    valueStr = startCompanionPick.name
-                )
-            ),
+            pickups = emptyList(),
             activeBanner = RunUiBanner(
                 title = "Piso 1: ${GameCatalog.floors[0].name}",
                 subtitle = GameCatalog.floors[0].subtitle
@@ -112,6 +97,7 @@ class GameEngine(
         if (!state.isActive || state.isPaused || state.isGameOver || state.isVictory ||
             state.activeEvent != null || state.pendingPartChoice != null ||
             state.pendingCompanionDialog != null || state.manufacturerEncounter != null ||
+            state.pendingArchiveDiscovery != null ||
             state.shopOpen || state.repairBenchOpen
         ) {
             return state
@@ -164,6 +150,9 @@ class GameEngine(
 
         // Check Physical Secret Anomalies
         s = SecretDiscoverySystem.stepAnomalies(s, ::allocId, sfx, onDiscovery)
+
+        // Interactive Lore Room Puzzles
+        s = PuzzleInteractionSystem.stepLoreProps(s, dt, ::damagePlayer, ::allocId, sfx, onDiscovery, onAchievement, onLorePuzzleSolved)
 
         // Update Conditional Companions
         s = CompanionSystem.updateCompanions(s, dt, ::allocId, sfx)
@@ -261,6 +250,7 @@ class GameEngine(
         state.passiveItems.forEach { speedMult *= it.effects.speedMult }
         state.activeDefects.forEach { speedMult *= it.effects.speedMult }
         if (state.activeSynergies.any { it.effectId == "carousel_overclock" }) speedMult *= 1.12f
+        speedMult *= BackpackSystem.speedPenaltyMult(state)
 
         val maxSpeed = state.character.baseSpeed * speedMult
 
@@ -829,6 +819,7 @@ class GameEngine(
                 )
                 s = InteractablesSystem.onExplosionInteractables(s, b.x, b.y, b.radius, ::allocId, sfx)
                 s = SecretDiscoverySystem.onExplosionNearAnomaly(s, b.x, b.y, b.radius, ::allocId, sfx, onDiscovery)
+                s = PuzzleInteractionSystem.onExplosionLoreProps(s, b.x, b.y, b.radius, ::allocId, sfx, onDiscovery, onAchievement, onLorePuzzleSolved)
                 s = CompanionSystem.onExplosionNearCompanions(s, b.x, b.y)
             } else {
                 remaining.add(b.copy(fuseSec = nf))
@@ -1583,6 +1574,12 @@ class GameEngine(
                 continue
             }
 
+            val (hitLoreProp, nextLoreState) = PuzzleInteractionSystem.applyProjectileToLoreProps(s, p, ::allocId, sfx, onDiscovery, onAchievement, onLorePuzzleSolved)
+            s = nextLoreState
+            if (hitLoreProp) {
+                continue
+            }
+
             if (p.fromPlayer) {
                 var consumed = false
                 val shortRangeBonus = if (s.activeDefects.any { it.effects.shortRangeBonusDamage }) 1.22f else 1f
@@ -1806,11 +1803,27 @@ class GameEngine(
         for (p in s.pickups) {
             val remExp = p.expireSec?.let { it - dt }
             if (remExp != null && remExp <= 0f) continue
-            val updated = p.copy(expireSec = remExp)
+            var updated = p.copy(expireSec = remExp)
+
+            // Smooth magnetic pull so drops near sewing table / obstacle corners are effortlessly collectible
+            val canMagnet = updated.kind in setOf(
+                PickupKind.BUTTON,
+                PickupKind.GOLD_BUTTON,
+                PickupKind.MATERIAL,
+                PickupKind.GEAR_TOKEN,
+                PickupKind.CONSUMABLE
+            ) || (updated.kind == PickupKind.BACKPACK_ITEM && s.backpackTier != null && BackpackSystem.remainingSlots(s) > 0)
+            val distToPlayer = hypot(updated.x - s.playerX, updated.y - s.playerY)
+            if (canMagnet && distToPlayer in 1f..75f) {
+                val ux = (s.playerX - updated.x) / distToPlayer
+                val uy = (s.playerY - updated.y) / distToPlayer
+                val pull = 280f * dt
+                updated = updated.copy(x = updated.x + ux * pull, y = updated.y + uy * pull)
+            }
 
             val pickupRadius = when (updated.kind) {
-                PickupKind.NEW_PART_PEDESTAL, PickupKind.PASSIVE_ITEM_PEDESTAL, PickupKind.COMPANION_SHRINE -> 42f
-                else -> 32f
+                PickupKind.NEW_PART_PEDESTAL, PickupKind.PASSIVE_ITEM_PEDESTAL, PickupKind.COMPANION_SHRINE, PickupKind.BACKPACK_TIER -> 48f
+                else -> 42f
             }
             if (hypot(updated.x - s.playerX, updated.y - s.playerY) <= pickupRadius) {
                 when (updated.kind) {
@@ -1905,6 +1918,31 @@ class GameEngine(
                                     roomObjective = updatedObj,
                                     activeBanner = RunUiBanner("Engranaje Recogido", "$nextCount/${updatedObj.targetCount}", 0xFFC89948, 1.6f)
                                 )
+                            }
+                        }
+                    }
+                    PickupKind.BACKPACK_ITEM -> {
+                        val bKind = runCatching { BackpackItemKind.valueOf(updated.valueStr) }.getOrNull()
+                        if (bKind != null) {
+                            val (added, nextState) = BackpackSystem.addItem(s, bKind, allocId = ::allocId, sfx = sfx)
+                            s = nextState
+                            if (!added) {
+                                remainingPickups.add(updated)
+                            }
+                        }
+                    }
+                    PickupKind.BACKPACK_TIER -> {
+                        val tier = runCatching { BackpackTier.valueOf(updated.valueStr) }.getOrNull()
+                        if (tier != null) {
+                            val currentCap = s.backpackTier?.capacity ?: 0
+                            if (s.backpackTier != null && currentCap >= tier.capacity) {
+                                sfx.play(ToySfx.PICKUP_BUTTON)
+                                s = s.copy(
+                                    buttons = s.buttons + 3,
+                                    activeBanner = RunUiBanner("Mochila Reciclada", "Ya llevas una mejor: +3 Botones.", 0xFFC89948, 2.0f)
+                                )
+                            } else {
+                                s = BackpackSystem.equipTier(s, tier, ::allocId, sfx, onUnlockBackpack)
                             }
                         }
                     }
@@ -2055,7 +2093,8 @@ class GameEngine(
                 roomsClearedCount = newRoomsCount,
                 equippedParts = parts,
                 pickups = drops,
-                toyboxMemory = mem
+                toyboxMemory = mem,
+                doorMapping = Direction.entries.associateWith { it }
             )
         }
 
@@ -2088,10 +2127,26 @@ class GameEngine(
         return s
     }
 
+    private fun oppositeDirection(dir: Direction): Direction = when (dir) {
+        Direction.NORTH -> Direction.SOUTH
+        Direction.SOUTH -> Direction.NORTH
+        Direction.EAST -> Direction.WEST
+        Direction.WEST -> Direction.EAST
+    }
+
     private fun enterRoom(state: GameRunState, targetCoord: GridCoord, fromDir: Direction): GameRunState {
         val targetRoom = state.dungeon.rooms[targetCoord] ?: return state
         val wasVisited = targetRoom.visited
-        val updatedRoom = targetRoom.copy(visited = true)
+        val entrySide = oppositeDirection(fromDir)
+        val updatedRoom = if (entrySide in targetRoom.secretDoors) {
+            targetRoom.copy(
+                visited = true,
+                doors = targetRoom.doors + entrySide,
+                secretDoors = targetRoom.secretDoors - entrySide
+            )
+        } else {
+            targetRoom.copy(visited = true)
+        }
         val rooms = state.dungeon.rooms.toMutableMap()
         rooms[targetCoord] = updatedRoom
 
@@ -2105,8 +2160,24 @@ class GameEngine(
             Direction.EAST -> WALL_THICKNESS + 58f to ARENA_H * 0.5f
         }
 
-        // Costura Eterna synergy heals parts between rooms
-        var s = state
+        // Persist departing room's dynamic state + Lore room before leaving so backtracking keeps rooms identical
+        val leavingSnapshot = SavedRoomState(
+            roomInteractables = state.roomInteractables.map {
+                it.copy(vx = 0f, vy = 0f, active = false, activeTimer = 0f, cooldownTimer = 0f)
+            },
+            pickups = state.pickups,
+            roomAnomalies = state.roomAnomalies,
+            roomObjective = state.roomObjective,
+            manufacturerNpc = state.manufacturerNpc,
+            alarmBellPos = state.alarmBellPos
+        )
+        var s = state.copy(
+            savedRoomsByCoord = state.savedRoomsByCoord + (state.currentCoord to leavingSnapshot)
+        )
+        if (s.loreRoom != null) {
+            s = s.copy(loreRoomsByCoord = s.loreRoomsByCoord + (s.currentCoord to s.loreRoom!!))
+        }
+        s = BackpackSystem.degradeStoredSparesOnRoomAdvance(s)
         if (s.activeSynergies.any { it.effectId == "room_repair" }) {
             s = repairAllParts(s, 8)
         }
@@ -2145,8 +2216,9 @@ class GameEngine(
             baseList
         } else emptyList()
 
-        // Spawn special room contents on first visit (guaranteed obstacle-free!)
-        val pickups = mutableListOf<GroundPickup>()
+        // Restore saved room pickups on revisit, or initialize on first visit
+        val savedTarget = if (wasVisited) s.savedRoomsByCoord[targetCoord] else null
+        val pickups = if (savedTarget != null) savedTarget.pickups.toMutableList() else mutableListOf()
         var activeEvent: RoomEventDef? = null
         var shopOpen = false
         var repairOpen = false
@@ -2162,6 +2234,10 @@ class GameEngine(
                         val (tx2, ty2) = safePickupPos(ARENA_W * 0.64f, ARENA_H * 0.5f, updatedRoom.obstacles)
                         pickups.add(GroundPickup(allocId(), PickupKind.PASSIVE_ITEM_PEDESTAL, tx2, ty2, valueStr = item.id))
                     }
+                    if (s.backpackTier == null && Random.nextFloat() < 0.45f) {
+                        val (bx, by) = safePickupPos(ARENA_W * 0.5f, ARENA_H * 0.68f, updatedRoom.obstacles)
+                        pickups.add(GroundPickup(allocId(), PickupKind.BACKPACK_TIER, bx, by, valueStr = BackpackTier.STITCHED_POUCH.name))
+                    }
                 }
                 RoomType.SECRET -> {
                     val (sx1, sy1) = safePickupPos(ARENA_W * 0.4f, ARENA_H * 0.45f, updatedRoom.obstacles)
@@ -2170,6 +2246,10 @@ class GameEngine(
                     if (item != null) {
                         val (sx2, sy2) = safePickupPos(ARENA_W * 0.6f, ARENA_H * 0.5f, updatedRoom.obstacles)
                         pickups.add(GroundPickup(allocId(), PickupKind.PASSIVE_ITEM_PEDESTAL, sx2, sy2, valueStr = item.id))
+                    }
+                    if (s.backpackTier == null && Random.nextFloat() < 0.50f) {
+                        val (bx, by) = safePickupPos(ARENA_W * 0.5f, ARENA_H * 0.70f, updatedRoom.obstacles)
+                        pickups.add(GroundPickup(allocId(), PickupKind.BACKPACK_TIER, bx, by, valueStr = BackpackTier.STITCHED_POUCH.name))
                     }
                 }
                 RoomType.EVENT -> {
@@ -2257,53 +2337,148 @@ class GameEngine(
             }
         )
 
-        // Expanded Mechanics room setup
-        val objective = if (!wasVisited && !curRoomResolved.cleared) {
-            RoomObjectiveSystem.maybeGenerateObjective(curRoomResolved.type, curRoomResolved.mechanic, nextState.floorNumber)
-        } else null
-        val objPickups = RoomObjectiveSystem.initPickupsForObjective(objective, curRoomResolved.obstacles, ::allocId)
-        val interactables = InteractablesSystem.generateForRoom(curRoomResolved.type, nextState.floorNumber, curRoomResolved.obstacles, objective, ::allocId)
-        val anomalies = if (!wasVisited) SecretDiscoverySystem.generateAnomaliesForRoom(curRoomResolved, nextState.dungeon, ::allocId) else emptyList()
-        val (relEnemies, bellPos) = EnemyRelationshipSystem.initializeRoomRelationships(
-            nextState.enemies,
-            hasBell = curRoomResolved.type == RoomType.COMBAT && Random.nextFloat() < 0.25f,
-            defeatedCaptainsCount = nextState.defeatedCaptainsCount
-        )
-        val npcState = if (ManufacturerSystem.shouldSpawnNpcInRoom(curRoomResolved, nextState)) {
-            ManufacturerNpcState(x = ARENA_W * 0.5f, y = ARENA_H * 0.36f, present = true)
-        } else null
+        // Expanded Mechanics room setup (restore saved room state on revisits instead of regenerating!)
+        val objective: RoomObjectiveState?
+        val objPickups: List<GroundPickup>
+        var finalInteractables: List<RoomInteractable>
+        val anomalies: List<RoomAnomaly>
+        var finalEnemies: List<ActiveEnemy>
+        val bellPos: Pair<Float, Float>?
+        val npcState: ManufacturerNpcState?
+        var cageBanner = nextState.activeBanner
 
-        if (curRoomResolved.type == RoomType.SECRET && !wasVisited && curRoomResolved.secretFlavor == SecretRoomFlavor.FORBIDDEN_CHAMBER) {
-            val forbiddenItem = GameCatalog.passiveItems.filter { it.rarity == Rarity.CURSED || it.rarity == Rarity.RARE }.randomOrNull()
-            if (forbiddenItem != null) {
-                nextState = nextState.copy(
-                    pickups = nextState.pickups + GroundPickup(allocId(), PickupKind.PASSIVE_ITEM_PEDESTAL, ARENA_W * 0.5f, ARENA_H * 0.62f, valueStr = forbiddenItem.id)
-                )
+        if (savedTarget != null) {
+            objective = savedTarget.roomObjective
+            objPickups = emptyList()
+            finalInteractables = savedTarget.roomInteractables
+            anomalies = savedTarget.roomAnomalies
+            finalEnemies = nextState.enemies
+            bellPos = savedTarget.alarmBellPos
+            npcState = savedTarget.manufacturerNpc
+        } else {
+            objective = if (!wasVisited && !curRoomResolved.cleared) {
+                RoomObjectiveSystem.maybeGenerateObjective(curRoomResolved.type, curRoomResolved.mechanic, nextState.floorNumber)
+            } else null
+            objPickups = RoomObjectiveSystem.initPickupsForObjective(objective, curRoomResolved.obstacles, ::allocId)
+            finalInteractables = if (!wasVisited) {
+                InteractablesSystem.generateForRoom(curRoomResolved.type, nextState.floorNumber, curRoomResolved.obstacles, objective, ::allocId)
+            } else {
+                emptyList()
+            }
+            anomalies = if (!wasVisited) SecretDiscoverySystem.generateAnomaliesForRoom(curRoomResolved, nextState.dungeon, ::allocId) else emptyList()
+            val (relEnemies, generatedBellPos) = EnemyRelationshipSystem.initializeRoomRelationships(
+                nextState.enemies,
+                hasBell = !wasVisited && curRoomResolved.type == RoomType.COMBAT && Random.nextFloat() < 0.25f,
+                defeatedCaptainsCount = nextState.defeatedCaptainsCount
+            )
+            finalEnemies = relEnemies
+            bellPos = generatedBellPos
+            npcState = if (ManufacturerSystem.shouldSpawnNpcInRoom(curRoomResolved, nextState)) {
+                ManufacturerNpcState(x = ARENA_W * 0.5f, y = ARENA_H * 0.36f, present = true)
+            } else null
+
+            if (curRoomResolved.type == RoomType.SECRET && !wasVisited && curRoomResolved.secretFlavor == SecretRoomFlavor.FORBIDDEN_CHAMBER) {
+                val forbiddenItem = GameCatalog.passiveItems.filter { it.rarity == Rarity.CURSED || it.rarity == Rarity.RARE }.randomOrNull()
+                if (forbiddenItem != null) {
+                    nextState = nextState.copy(
+                        pickups = nextState.pickups + GroundPickup(allocId(), PickupKind.PASSIVE_ITEM_PEDESTAL, ARENA_W * 0.5f, ARENA_H * 0.62f, valueStr = forbiddenItem.id)
+                    )
+                }
+            }
+
+            // Random Companion Cage guarded by protector enemies in combat/challenge/curse/forbidden rooms
+            val cageChance = if (nextState.activeCompanions.isEmpty() && nextState.roomsClearedCount >= 1) 0.42f else 0.26f
+            if (!wasVisited && !curRoomResolved.cleared &&
+                curRoomResolved.type in setOf(RoomType.COMBAT, RoomType.CHALLENGE, RoomType.CURSE, RoomType.FORBIDDEN) &&
+                finalEnemies.isNotEmpty() && nextState.activeCompanions.size < 2 &&
+                finalInteractables.none { it.type == InteractableType.COMPANION_CAGE } &&
+                Random.nextFloat() < cageChance
+            ) {
+                val compPool = CompanionId.entries.filter { id ->
+                    nextState.activeCompanions.none { it.id == id } && id !in nextState.pendingGrudgeCompanions
+                }
+                val chosenComp = compPool.randomOrNull()
+                if (chosenComp != null) {
+                    val cageTargetX = if (px < ARENA_W * 0.5f) ARENA_W * 0.72f else ARENA_W * 0.28f
+                    val cageTargetY = if (py < ARENA_H * 0.5f) ARENA_H * 0.68f else ARENA_H * 0.32f
+                    val cage = InteractablesSystem.placeSafe(
+                        type = InteractableType.COMPANION_CAGE,
+                        x = cageTargetX,
+                        y = cageTargetY,
+                        obstacles = curRoomResolved.obstacles,
+                        allocId = ::allocId,
+                        variant = chosenComp.ordinal
+                    )
+                    finalInteractables = finalInteractables + cage
+
+                    // Assign 1-2 enemies in this room to actively guard & protect the cage
+                    val guardCount = if (finalEnemies.size >= 3) 2 else 1
+                    val orderedIndices = finalEnemies.indices.sortedByDescending { idx ->
+                        when (finalEnemies[idx].type) {
+                            EnemyType.BODYGUARD_BEAR, EnemyType.RUSTY_TIN_KNIGHT -> 3
+                            EnemyType.PLUSH_BEAR, EnemyType.TIN_SOLDIER -> 2
+                            else -> 1
+                        }
+                    }.take(guardCount).toSet()
+
+                    finalEnemies = finalEnemies.mapIndexed { idx, enemy ->
+                        if (idx in orderedIndices) {
+                            val offsetSign = if (idx == orderedIndices.first()) -1f else 1f
+                            val gx = (cage.x + offsetSign * 42f).coerceIn(WALL_THICKNESS + 32f, ARENA_W - WALL_THICKNESS - 32f)
+                            val gy = (cage.y + 44f).coerceIn(WALL_THICKNESS + 32f, ARENA_H - WALL_THICKNESS - 32f)
+                            enemy.copy(
+                                x = gx,
+                                y = gy,
+                                role = EnemyRole.PROTECTOR,
+                                protectedAllyId = null,
+                                protectedCageId = cage.id
+                            )
+                        } else enemy
+                    }
+                    if (cageBanner == null || cageBanner == s.activeBanner) {
+                        cageBanner = RunUiBanner(
+                            "¡Mascota Enjaulada!",
+                            "Enemigos custodian la jaula de ${chosenComp.displayName}. Destrúyela con bolitas o bomba.",
+                            0xFFC89948,
+                            3.2f
+                        )
+                    }
+                }
             }
         }
 
+        val nextLoreRoom = if (curRoomResolved.type == RoomType.LORE) {
+            nextState.loreRoomsByCoord[targetCoord]
+                ?: LoreRoomSystem.generateForRoom(nextState.floorNumber, targetCoord, curRoomResolved.obstacles, ::allocId)
+        } else null
+
         nextState = nextState.copy(
-            enemies = relEnemies,
+            enemies = finalEnemies,
             alarmBellPos = bellPos,
             roomObjective = objective,
-            roomInteractables = interactables,
+            roomInteractables = finalInteractables,
             roomAnomalies = anomalies,
             pickups = nextState.pickups + objPickups,
-            manufacturerNpc = npcState
+            manufacturerNpc = npcState,
+            loreRoom = nextLoreRoom,
+            loreRoomsByCoord = if (nextLoreRoom != null) nextState.loreRoomsByCoord + (targetCoord to nextLoreRoom) else nextState.loreRoomsByCoord,
+            activeBanner = if (nextLoreRoom != null && !wasVisited) {
+                RunUiBanner("${nextLoreRoom.loreRoomType.displayName}: ${nextLoreRoom.title}", nextLoreRoom.hintSummary, nextLoreRoom.loreRoomType.badgeColorHex, 3.6f)
+            } else cageBanner
         )
         nextState = ManufacturerSystem.tickClosedMysteryBoxOnRoomEnter(nextState, ::allocId, sfx)
         nextState = RoomMechanicSystem.initForRoom(nextState, curRoomResolved)
-        nextState = CompanionSystem.onEnterRoomCompanions(nextState, curRoomResolved, ::allocId, sfx)
+        nextState = CompanionSystem.onEnterRoomCompanions(nextState, curRoomResolved, ::allocId, sfx, wasVisited = wasVisited)
         return nextState
     }
 
     private fun safePickupPos(x: Float, y: Float, obstacles: List<ObstacleRect>): Pair<Float, Float> {
-        val cx = x.coerceIn(WALL_THICKNESS + 36f, ARENA_W - WALL_THICKNESS - 36f)
-        val cy = y.coerceIn(WALL_THICKNESS + 36f, ARENA_H - WALL_THICKNESS - 36f)
+        val cx = x.coerceIn(WALL_THICKNESS + 44f, ARENA_W - WALL_THICKNESS - 44f)
+        val cy = y.coerceIn(WALL_THICKNESS + 44f, ARENA_H - WALL_THICKNESS - 44f)
         if (obstacles.isEmpty()) return cx to cy
-        val (rx, ry) = RoomMechanicSystem.clampToObstacles(cx, cy, 42f, obstacles)
-        return rx.coerceIn(WALL_THICKNESS + 36f, ARENA_W - WALL_THICKNESS - 36f) to
-            ry.coerceIn(WALL_THICKNESS + 36f, ARENA_H - WALL_THICKNESS - 36f)
+        val (rx, ry) = RoomMechanicSystem.clampToObstacles(cx, cy, 52f, obstacles)
+        return rx.coerceIn(WALL_THICKNESS + 44f, ARENA_W - WALL_THICKNESS - 44f) to
+            ry.coerceIn(WALL_THICKNESS + 44f, ARENA_H - WALL_THICKNESS - 44f)
     }
 
     fun openCompanionInspect(state: GameRunState, companionId: CompanionId): GameRunState {
@@ -2365,6 +2540,9 @@ class GameEngine(
             roomObjective = null,
             roomAnomalies = emptyList(),
             manufacturerNpc = null,
+            loreRoom = null,
+            loreRoomsByCoord = emptyMap(),
+            savedRoomsByCoord = emptyMap(),
             interactionPrompt = null,
             nextFloorBias = null,
             exitTrapdoorOpen = false,
@@ -2415,6 +2593,24 @@ class GameEngine(
                         )
                     )
                 )
+            }
+            offer.itemId != null && offer.itemId.startsWith("backpack_item:") -> {
+                val bKind = runCatching { BackpackItemKind.valueOf(offer.itemId.removePrefix("backpack_item:")) }.getOrNull()
+                if (bKind != null) {
+                    val (added, ns) = BackpackSystem.addItem(s, bKind, allocId = ::allocId, sfx = sfx)
+                    s = ns
+                    if (!added) {
+                        s = s.copy(
+                            pickups = s.pickups + GroundPickup(allocId(), PickupKind.BACKPACK_ITEM, s.playerX, (s.playerY + 42f).coerceAtMost(ARENA_H - WALL_THICKNESS - 40f), valueStr = bKind.name)
+                        )
+                    }
+                }
+            }
+            offer.itemId != null && offer.itemId.startsWith("backpack_tier:") -> {
+                val tier = runCatching { BackpackTier.valueOf(offer.itemId.removePrefix("backpack_tier:")) }.getOrNull()
+                if (tier != null) {
+                    s = BackpackSystem.equipTier(s, tier, ::allocId, sfx, onUnlockBackpack)
+                }
             }
             offer.itemId != null -> {
                 GameCatalog.itemById(offer.itemId)?.let { item ->
@@ -2580,6 +2776,7 @@ class GameEngine(
         if (npc != null && npc.present && !npc.interacted && hypot(npc.x - state.playerX, npc.y - state.playerY) <= 68f) {
             return "Hablar con El Fabricante"
         }
+        PuzzleInteractionSystem.findNearbyLorePrompt(state)?.let { return it.second }
         SecretDiscoverySystem.findNearbyAnomalyPrompt(state)?.let { return it.second }
         RoomObjectiveSystem.findNearbyObjectivePrompt(state)?.let { return it }
         InteractablesSystem.findNearbyInteractablePrompt(state)?.let { return it.second }
@@ -2590,6 +2787,17 @@ class GameEngine(
         val npc = state.manufacturerNpc
         if (npc != null && npc.present && !npc.interacted && hypot(npc.x - state.playerX, npc.y - state.playerY) <= 68f) {
             return state.copy(manufacturerEncounter = ManufacturerSystem.buildEncounter(state))
+        }
+        PuzzleInteractionSystem.findNearbyLorePrompt(state)?.let { (prop, _) ->
+            return PuzzleInteractionSystem.interactLoreProp(
+                state = state,
+                propId = prop.id,
+                allocId = ::allocId,
+                sfx = sfx,
+                onDiscovery = onDiscovery,
+                onAchievement = onAchievement,
+                onLorePuzzleSolved = onLorePuzzleSolved
+            )
         }
         SecretDiscoverySystem.findNearbyAnomalyPrompt(state)?.let { (anom, _) ->
             return SecretDiscoverySystem.interactWithAnomaly(state, anom.id, ::allocId, sfx, onDiscovery)
@@ -2618,10 +2826,38 @@ class GameEngine(
         return ManufacturerSystem.resolveOffer(
             state = state,
             offerId = offerId,
+            allocId = ::allocId,
             sfx = sfx,
             onDiscovery = onDiscovery,
+            onAchievement = onAchievement,
+            onUnlockBackpack = onUnlockBackpack,
             acquireItemFn = ::acquirePassiveItem,
             onRecordTrust = onManufacturerTrust
         )
+    }
+
+    fun useBackpackItem(state: GameRunState, uid: Long): GameRunState {
+        return BackpackSystem.useItem(state, uid, ::allocId, sfx, onDiscovery, onAchievement)
+    }
+
+    fun discardBackpackItem(state: GameRunState, uid: Long): GameRunState {
+        return BackpackSystem.discardItem(state, uid)
+    }
+
+    fun craftBackpack(state: GameRunState, recipe: BackpackRecipe): GameRunState {
+        return BackpackSystem.craftBackpack(
+            state = state,
+            recipe = recipe,
+            allocId = ::allocId,
+            sfx = sfx,
+            onDiscovery = onDiscovery,
+            onAchievement = onAchievement,
+            onUnlockTier = onUnlockBackpack,
+            onDiscoverRecipe = onDiscoverRecipe
+        )
+    }
+
+    fun dismissArchiveDiscovery(state: GameRunState): GameRunState {
+        return state.copy(pendingArchiveDiscovery = null)
     }
 }

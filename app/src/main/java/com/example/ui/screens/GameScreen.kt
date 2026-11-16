@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.BackpackRecipe
 import com.example.data.model.BodyZone
 import com.example.data.model.CompanionId
 import com.example.data.model.ObjectiveType
@@ -71,13 +72,28 @@ fun GameScreen(
     onInspectCompanion: (CompanionId) -> Unit,
     onResolveCompanionDialog: (String) -> Unit,
     onResolveManufacturerOffer: (String?) -> Unit,
+    onUseBackpackItem: (Long) -> Unit,
+    onDiscardBackpackItem: (Long) -> Unit,
+    onCraftBackpack: (BackpackRecipe) -> Unit,
+    onDismissArchiveDiscovery: () -> Unit,
     onAbandonRun: () -> Unit
 ) {
     var pauseTab by remember { mutableStateOf(0) } // 0 = Menu/Stats, 1 = Body/Synergies, 2 = Toybox Memory, 3 = Map
     var showMemoryInspector by remember { mutableStateOf(false) }
+    var showBackpack by remember { mutableStateOf(false) }
 
     BackHandler {
-        onTogglePause(!state.isPaused)
+        when {
+            showBackpack -> {
+                showBackpack = false
+                onTogglePause(false)
+            }
+            showMemoryInspector -> {
+                showMemoryInspector = false
+                onTogglePause(false)
+            }
+            else -> onTogglePause(!state.isPaused)
+        }
     }
 
     Box(
@@ -207,7 +223,7 @@ fun GameScreen(
                     }
                 }
 
-                // Dynamic Room Mechanic Pill & Closed Mystery Box badge (top-right of arena)
+                // Top-right Arena Column: Mochila Button, Dynamic Room Mechanic Pill & Closed Mystery Box badge
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -215,6 +231,58 @@ fun GameScreen(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    val packTier = state.backpackTier
+                    val bpUsed = BackpackSystem.usedSlots(state)
+                    val bpCap = BackpackSystem.capacity(state)
+                    Row(
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 76.dp, minHeight = 48.dp)
+                            .clip(CutCornerShape(5.dp))
+                            .background(CharcoalBlack.copy(alpha = 0.85f))
+                            .border(1.5.dp, packTier?.rarity?.color ?: AgedWoodLight, CutCornerShape(5.dp))
+                            .testTag("btn_backpack")
+                            .clickable {
+                                showBackpack = true
+                                onTogglePause(true)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (packTier != null) {
+                            Image(
+                                bitmap = PixelArtSprites.forBackpackTier(packTier),
+                                contentDescription = "Abrir Mochila",
+                                filterQuality = FilterQuality.None,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Backpack,
+                                contentDescription = "Sin Mochila",
+                                tint = ParchmentDark.copy(alpha = 0.55f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = if (packTier != null) "MOCHILA" else "SIN MOCHILA",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                                color = ParchmentDark
+                            )
+                            Text(
+                                text = if (packTier != null) "$bpUsed/$bpCap" else "0/0",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = when {
+                                    packTier == null -> ParchmentDark.copy(alpha = 0.7f)
+                                    bpUsed >= bpCap -> CrimsonBright
+                                    else -> TarnishedBrass
+                                }
+                            )
+                        }
+                    }
+
                     if (state.currentRoom.mechanic != RoomMechanic.NONE) {
                         Box(
                             modifier = Modifier
@@ -248,6 +316,7 @@ fun GameScreen(
 
                 // Alternative Room Objective HUD Pill (top-center when active & no boss bar)
                 val obj = state.roomObjective
+                val loreRoom = state.loreRoom
                 if (obj != null && !obj.completed && !obj.failed && activeBoss == null) {
                     val statusText = when {
                         obj.maxTimerSec > 0f -> "${obj.timerSec.toInt()}s"
@@ -257,7 +326,7 @@ fun GameScreen(
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
-                            .padding(top = 8.dp, start = 58.dp, end = 58.dp)
+                            .padding(top = 8.dp, start = 58.dp, end = 92.dp)
                             .background(CharcoalBlack.copy(alpha = 0.84f), CutCornerShape(5.dp))
                             .border(1.2.dp, TarnishedBrass, CutCornerShape(5.dp))
                             .padding(horizontal = 10.dp, vertical = 5.dp),
@@ -284,6 +353,36 @@ fun GameScreen(
                                 Icon(Icons.Default.Close, contentDescription = "Abandonar objetivo", tint = ParchmentDark, modifier = Modifier.size(16.dp))
                             }
                         }
+                    }
+                } else if (loreRoom != null && activeBoss == null) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp, start = 58.dp, end = 92.dp)
+                            .background(CharcoalBlack.copy(alpha = 0.86f), CutCornerShape(5.dp))
+                            .border(1.2.dp, Color(loreRoom.loreRoomType.badgeColorHex), CutCornerShape(5.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "${loreRoom.loreRoomType.displayName.uppercase()} • ${if (loreRoom.solved) "RESUELTO ✓" else loreRoom.title}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (loreRoom.solved) MutedMoss else TarnishedBrass,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val infoLine = when {
+                            loreRoom.heldTokens.isNotEmpty() -> "En mano: ${loreRoom.heldTokens.joinToString(", ")}"
+                            loreRoom.hintStepText.isNotBlank() -> loreRoom.hintStepText
+                            else -> loreRoom.hintSummary
+                        }
+                        Text(
+                            text = infoLine,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AgedIvory,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
 
@@ -404,6 +503,7 @@ fun GameScreen(
                 state = state,
                 onRepairZone = onRepairAtBench,
                 onStartRepairMinigame = onStartRepairMinigame,
+                onCraftBackpack = onCraftBackpack,
                 onClose = onCloseRepairBench
             )
         }
@@ -432,7 +532,24 @@ fun GameScreen(
             )
         }
 
-        if (showMemoryInspector) {
+        state.pendingArchiveDiscovery?.let { discovery ->
+            ArchiveDiscoveryDialog(
+                discovery = discovery,
+                onDismiss = onDismissArchiveDiscovery
+            )
+        }
+
+        if (showBackpack) {
+            BackpackDialog(
+                state = state,
+                onUseItem = onUseBackpackItem,
+                onDiscardItem = onDiscardBackpackItem,
+                onClose = {
+                    showBackpack = false
+                    onTogglePause(false)
+                }
+            )
+        } else if (showMemoryInspector) {
             ToyboxMemoryDialog(
                 state = state,
                 onClose = {
@@ -440,7 +557,7 @@ fun GameScreen(
                     onTogglePause(false)
                 }
             )
-        } else if (state.isPaused) {
+        } else if (state.isPaused && state.pendingArchiveDiscovery == null) {
             PauseOverlayDialog(
                 state = state,
                 selectedTab = pauseTab,
@@ -615,6 +732,7 @@ private fun MiniMapCanvas(state: GameRunState, modifier: Modifier = Modifier) {
                     r.type.name == "TREASURE" -> Color(0xFFD9C05B)
                     r.type.name == "SHOP" -> MutedMoss
                     r.type.name == "MANUFACTURER" -> Color(0xFFB388EB)
+                    r.type.name == "LORE" -> Color(0xFF9E7AC8)
                     r.type.name == "FORBIDDEN" -> CrimsonBlood
                     r.visited -> AgedIvory.copy(alpha = 0.7f)
                     else -> AgedWoodLight.copy(alpha = 0.5f)

@@ -3,12 +3,15 @@ package com.example.ui.components
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.example.data.model.BackpackItemKind
+import com.example.data.model.BackpackTier
 import com.example.data.model.BodyZone
 import com.example.data.model.CharacterId
 import com.example.data.model.CompanionId
 import com.example.data.model.ConsumableType
 import com.example.data.model.EnemyType
 import com.example.data.model.InteractableType
+import com.example.data.model.LoreProp
 import com.example.data.model.RepairMaterial
 import com.example.data.model.SecretClueType
 
@@ -665,4 +668,7 @@ object PixelArtSprites {
     fun forSecretClue(type: SecretClueType): ImageBitmap = PixelArtExpandedSprites.forSecretClue(type)
     fun forMaterial(mat: RepairMaterial): ImageBitmap = PixelArtExpandedSprites.forMaterial(mat)
     fun forObjectiveProp(kind: String): ImageBitmap = PixelArtExpandedSprites.forObjectiveProp(kind)
+    fun forBackpackTier(tier: BackpackTier): ImageBitmap = PixelArtAmpliacionSprites.forBackpackTier(tier)
+    fun forBackpackItem(kind: BackpackItemKind): ImageBitmap = PixelArtAmpliacionSprites.forBackpackItem(kind)
+    fun forLoreProp(prop: LoreProp): ImageBitmap = PixelArtAmpliacionSprites.forLoreProp(prop)
 }

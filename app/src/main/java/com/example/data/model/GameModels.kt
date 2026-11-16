@@ -262,6 +262,7 @@ enum class RoomType(val displayName: String, val symbol: String) {
     REPAIR("Mesa de Costura", "✂"),
     MANUFACTURER("Sala del Fabricante", "⚙"),
     FORBIDDEN("Sala Prohibida", "☣"),
+    LORE("Sala de Memoria", "❦"),
     BOSS("Jefe del Piso", "♛")
 }
 

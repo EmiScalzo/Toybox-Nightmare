@@ -412,6 +412,29 @@ object PixelArtExpandedSprites {
             ))
         }
 
+        InteractableType.COMPANION_CAGE -> if (destroyed) {
+            PixelArtSprites.sprite("int_companion_cage_broken", listOf(
+                "................",
+                ".KK..........KK.",
+                "KCCK........KCCK",
+                ".KCK..KGGK..KCK.",
+                "KCCCCCCCCCCCCCCK",
+                ".KKKKKKKKKKKKKK."
+            ))
+        } else {
+            PixelArtSprites.sprite("int_companion_cage", listOf(
+                "..KKKKKKKKKKKK..",
+                ".KCCCCCCCCCCCCK.",
+                "KCC..KCCK..KCCCK",
+                "KC...KCCK...KCCK",
+                "KC...KGGK...KCCK",
+                "KC...KCCK...KCCK",
+                "KCC..KCCK..KCCCK",
+                "KCCCCCCCCCCCCCCK",
+                ".KKKKKKKKKKKKKK."
+            ))
+        }
+
         InteractableType.OIL_PUDDLE -> PixelArtSprites.sprite("int_oil_puddle", listOf(
             "....KKKKKKKK....",
             "..KKDDDDDDDDKK..",

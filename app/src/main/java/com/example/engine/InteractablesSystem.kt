@@ -90,7 +90,7 @@ object InteractablesSystem {
         return list
     }
 
-    private fun placeSafe(
+    fun placeSafe(
         type: InteractableType,
         x: Float,
         y: Float,
@@ -108,7 +108,7 @@ object InteractablesSystem {
             InteractableType.TOY_CAROUSEL -> 52f
             InteractableType.ELECTRIC_TRAIN -> 28f
             InteractableType.OIL_PUDDLE, InteractableType.STEAM_VENT -> 44f
-            InteractableType.PRESSURE_TILE -> 30f
+            InteractableType.PRESSURE_TILE, InteractableType.COMPANION_CAGE -> 30f
             else -> 26f
         }
         return RoomInteractable(
@@ -476,6 +476,7 @@ object InteractablesSystem {
                     if (nhp <= 0f) {
                         return true to destroyInteractable(state, idx, allocId, sfx)
                     } else {
+                        sfx.play(ToySfx.HIT_ENEMY)
                         val list = state.roomInteractables.toMutableList()
                         list[idx] = item.copy(hp = nhp)
                         return true to state.copy(roomInteractables = list)
@@ -531,8 +532,21 @@ object InteractablesSystem {
                 list[idx] = item.copy(destroyed = true)
                 val roll = Random.nextFloat()
                 when {
-                    roll < 0.48f -> pickups.add(GroundPickup(allocId(), PickupKind.MATERIAL, item.x, item.y, valueStr = RepairMaterial.entries.random().name))
-                    roll < 0.80f -> pickups.add(GroundPickup(allocId(), PickupKind.BUTTON, item.x, item.y, amount = 2))
+                    state.backpackTier == null && roll < 0.22f -> {
+                        pickups.add(
+                            GroundPickup(
+                                allocId(),
+                                PickupKind.BACKPACK_TIER,
+                                item.x,
+                                item.y,
+                                valueStr = BackpackTier.STITCHED_POUCH.name
+                            )
+                        )
+                        banner = RunUiBanner("¡Bolsillo Encontrado!", "Entre los restos sellados había una bolsa cosida.", 0xFFC89948, 2.4f)
+                    }
+                    roll < 0.36f -> pickups.add(GroundPickup(allocId(), PickupKind.MATERIAL, item.x, item.y, valueStr = RepairMaterial.entries.random().name))
+                    roll < 0.64f -> pickups.add(GroundPickup(allocId(), PickupKind.BUTTON, item.x, item.y, amount = 2))
+                    roll < 0.85f -> pickups.add(GroundPickup(allocId(), PickupKind.BACKPACK_ITEM, item.x, item.y, valueStr = BackpackSystem.randomDropKind().name))
                     else -> {
                         val sp = EnemyType.CLOCKWORK_SPIDER
                         enemies.add(ActiveEnemy(allocId(), sp, item.x, item.y, hp = sp.maxHp * state.difficulty.enemyHpMult, maxHp = sp.maxHp * state.difficulty.enemyHpMult, radius = 19f))
@@ -545,6 +559,29 @@ object InteractablesSystem {
                 list[idx] = item.copy(destroyed = true)
                 pickups.add(GroundPickup(allocId(), PickupKind.MATERIAL, item.x, item.y, valueStr = RepairMaterial.GEAR.name))
                 pickups.add(GroundPickup(allocId(), PickupKind.BUTTON, item.x + 16f, item.y, amount = 2))
+            }
+            InteractableType.COMPANION_CAGE -> {
+                sfx.play(ToySfx.EXPLOSION)
+                list[idx] = item.copy(destroyed = true, triggered = true)
+                val rescued = CompanionId.entries[item.variant % CompanionId.entries.size]
+                pickups.add(
+                    GroundPickup(
+                        id = allocId(),
+                        kind = PickupKind.COMPANION_SHRINE,
+                        x = item.x,
+                        y = item.y,
+                        valueStr = rescued.name
+                    )
+                )
+                enemies = enemies.map { e ->
+                    if (e.protectedCageId == item.id) e.copy(enraged = true, protectedCageId = null) else e
+                }.toMutableList()
+                banner = RunUiBanner(
+                    "¡Jaula Destruida!",
+                    "Liberaste a ${rescued.displayName}. Acércate para que se una.",
+                    0xFF597354,
+                    2.8f
+                )
             }
             else -> {
                 list[idx] = item.copy(destroyed = true)
@@ -573,8 +610,10 @@ object InteractablesSystem {
 
     fun findNearbyInteractablePrompt(state: GameRunState): Pair<RoomInteractable, String>? {
         val near = state.roomInteractables.filter {
-            !it.destroyed && it.type.category == InteractableCategory.ACTIVATABLE &&
-                hypot(it.x - state.playerX, it.y - state.playerY) <= 64f
+            !it.destroyed &&
+                !(it.type == InteractableType.PRIZE_MACHINE && it.triggered) &&
+                it.type.category == InteractableCategory.ACTIVATABLE &&
+                hypot(it.x - state.playerX, it.y - state.playerY) <= 68f
         }.minByOrNull { hypot(it.x - state.playerX, it.y - state.playerY) } ?: return null
         val verb = when (near.type) {
             InteractableType.ELECTRIC_TRAIN -> "Activar Tren"

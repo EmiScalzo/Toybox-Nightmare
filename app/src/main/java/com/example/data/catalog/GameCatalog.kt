@@ -898,7 +898,11 @@ object GameCatalog {
 
         // Desafíos
         AchievementDef("ach_nightmare_floor", "Modo Pesadilla", AchievementCategory.CHALLENGES, "Completa al menos un piso en dificultad Pesadilla.", "Piso en Pesadilla", rewardText = "+20 pts de desafío", rewardChallengePoints = 20),
-        AchievementDef("ach_rich_buttons", "Tesorero de Latón", AchievementCategory.CHALLENGES, "Acumula 25 botones en una sola partida.", "25 botones en partida", rewardText = "+10 pts de desafío", rewardChallengePoints = 10)
+        AchievementDef("ach_rich_buttons", "Tesorero de Latón", AchievementCategory.CHALLENGES, "Acumula 25 botones en una sola partida.", "25 botones en partida", rewardText = "+10 pts de desafío", rewardChallengePoints = 10),
+        AchievementDef("ach_lore_puzzle_5", "Curiosidad de Taller", AchievementCategory.SECRETS, "Resuelve 5 puzles en Habitaciones de Lore sin recibir daño.", "5 puzles de lore resueltos", rewardText = "+20 pts de desafío", rewardChallengePoints = 20),
+        AchievementDef("ach_archive_10", "Archivista de Wonderland", AchievementCategory.COLLECTION, "Reúne 10 entradas en el Archivo de Wonderland.", "10 archivos desbloqueados", rewardText = "+20 pts de desafío", rewardChallengePoints = 20),
+        AchievementDef("ach_forbidden_doc", "Documento Prohibido", AchievementCategory.SECRETS, "Descubre un registro prohibido sobre El Fabricante.", "1 documento prohibido", hidden = true, rewardText = "+25 pts de desafío", rewardChallengePoints = 25),
+        AchievementDef("ach_backpack_craft", "Costurero de Expedición", AchievementCategory.COLLECTION, "Fabrica o equipa una mochila mejorada en la Mesa de Costura.", "1 mochila fabricada", rewardText = "+15 pts de desafío", rewardChallengePoints = 15)
     )
 
     fun partById(id: String): BodyPartDef = bodyParts.find { it.id == id } ?: bodyParts.first()
