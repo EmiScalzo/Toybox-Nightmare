@@ -121,6 +121,12 @@ fun ToyboxRootApp(vm: ToyboxViewModel = viewModel()) {
                         onDiscardBackpackItem = vm::discardBackpackItem,
                         onCraftBackpack = vm::craftBackpack,
                         onDismissArchiveDiscovery = vm::dismissArchiveDiscovery,
+                        onToggleLight = vm::toggleLight,
+                        onCycleLightSource = vm::cycleLightSource,
+                        onOpenContractBoard = vm::openContractBoard,
+                        onCloseContractBoard = vm::closeContractBoard,
+                        onAcceptContract = vm::acceptContract,
+                        onAbandonContract = vm::abandonContract,
                         onAbandonRun = vm::abandonRun
                     )
                 }

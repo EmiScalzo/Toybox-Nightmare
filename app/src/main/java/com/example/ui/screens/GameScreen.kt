@@ -35,10 +35,15 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.BackpackRecipe
 import com.example.data.model.BodyZone
 import com.example.data.model.CompanionId
+import com.example.data.model.ContractDef
+import com.example.data.model.LightSourceType
 import com.example.data.model.ObjectiveType
+import com.example.data.model.PatchEmotion
 import com.example.data.model.RepairActionMode
 import com.example.data.model.RoomMechanic
+import com.example.data.model.RoomType
 import com.example.data.model.WearState
+import com.example.data.model.bossMechanicKind
 import com.example.engine.*
 import com.example.ui.components.GameArenaCanvas
 import com.example.ui.components.PixelArtSprites
@@ -76,14 +81,26 @@ fun GameScreen(
     onDiscardBackpackItem: (Long) -> Unit,
     onCraftBackpack: (BackpackRecipe) -> Unit,
     onDismissArchiveDiscovery: () -> Unit,
+    onToggleLight: () -> Unit,
+    onCycleLightSource: () -> Unit,
+    onOpenContractBoard: () -> Unit,
+    onCloseContractBoard: () -> Unit,
+    onAcceptContract: (ContractDef) -> Unit,
+    onAbandonContract: (String) -> Unit,
     onAbandonRun: () -> Unit
 ) {
     var pauseTab by remember { mutableStateOf(0) } // 0 = Menu/Stats, 1 = Body/Synergies, 2 = Toybox Memory, 3 = Map
     var showMemoryInspector by remember { mutableStateOf(false) }
     var showBackpack by remember { mutableStateOf(false) }
+    var showEmotionDialog by remember { mutableStateOf(false) }
 
     BackHandler {
         when {
+            state.contractBoardOpen -> onCloseContractBoard()
+            showEmotionDialog -> {
+                showEmotionDialog = false
+                onTogglePause(false)
+            }
             showBackpack -> {
                 showBackpack = false
                 onTogglePause(false)
@@ -134,23 +151,32 @@ fun GameScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Boss Health Bar at top of arena
+                // Boss Health Bar at top of arena (with Phase, Armor & Mechanic Hint)
                 val activeBoss = state.enemies.firstOrNull { it.type.isBoss }
                 if (activeBoss != null) {
+                    val phaseLabel = when (activeBoss.bossCurrentPhase) {
+                        3 -> "FASE III"
+                        2 -> "FASE II"
+                        else -> "FASE I"
+                    }
+                    val armorTag = if (activeBoss.bossArmorActive) "BLINDADO" else "VULNERABLE"
+                    val mechKind = activeBoss.type.bossMechanicKind()
                     Column(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .fillMaxWidth(0.86f)
                             .padding(top = 8.dp)
-                            .background(CharcoalBlack.copy(alpha = 0.78f), CutCornerShape(4.dp))
-                            .border(1.dp, CrimsonBright, CutCornerShape(4.dp))
+                            .background(CharcoalBlack.copy(alpha = 0.84f), CutCornerShape(4.dp))
+                            .border(1.2.dp, if (activeBoss.bossArmorActive) TarnishedBrass else CrimsonBright, CutCornerShape(4.dp))
                             .padding(6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = activeBoss.type.displayName.uppercase(),
+                            text = "${activeBoss.type.displayName.uppercase()} • $phaseLabel • $armorTag",
                             style = MaterialTheme.typography.labelLarge,
-                            color = AgedIvory
+                            color = AgedIvory,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(Modifier.height(3.dp))
                         LinearProgressIndicator(
@@ -161,64 +187,179 @@ fun GameScreen(
                             color = CrimsonBright,
                             trackColor = AgedWoodDark
                         )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = mechKind.hint,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = TarnishedBrass,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
 
-                // Companion HUD Badges (top-left of arena, clickable to inspect/repair/dismiss)
-                if (state.activeCompanions.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(start = 8.dp, top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        state.activeCompanions.forEach { comp ->
-                            val alert = comp.broken || comp.needsAttention
-                            Box(
-                                modifier = Modifier
-                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                    .clip(CutCornerShape(5.dp))
-                                    .background(CharcoalBlack.copy(alpha = 0.82f))
-                                    .border(
-                                        1.5.dp,
-                                        when {
-                                            comp.broken -> CrimsonBright
-                                            comp.needsAttention -> AmberWarning
-                                            else -> TarnishedBrassDim
-                                        },
-                                        CutCornerShape(5.dp)
-                                    )
-                                    .testTag("hud_companion_${comp.id.name}")
-                                    .clickable { onInspectCompanion(comp.id) }
-                                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // Top-left Arena Column: Companions, Light Source Chip, Emotion Chip, Contracts Chip
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 8.dp, top = if (activeBoss != null) 72.dp else 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (state.activeCompanions.isNotEmpty()) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            state.activeCompanions.forEach { comp ->
+                                val alert = comp.broken || comp.needsAttention
+                                Box(
+                                    modifier = Modifier
+                                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                        .clip(CutCornerShape(5.dp))
+                                        .background(CharcoalBlack.copy(alpha = 0.82f))
+                                        .border(
+                                            1.5.dp,
+                                            when {
+                                                comp.broken -> CrimsonBright
+                                                comp.needsAttention -> AmberWarning
+                                                else -> TarnishedBrassDim
+                                            },
+                                            CutCornerShape(5.dp)
+                                        )
+                                        .testTag("hud_companion_${comp.id.name}")
+                                        .clickable { onInspectCompanion(comp.id) }
+                                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Image(
-                                        bitmap = PixelArtSprites.forCompanion(comp.id, comp.broken),
-                                        contentDescription = comp.id.displayName,
-                                        filterQuality = FilterQuality.None,
-                                        contentScale = ContentScale.Fit,
-                                        modifier = Modifier.size(26.dp)
-                                    )
-                                    if (alert) {
-                                        Text(
-                                            text = "!",
-                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                            color = if (comp.broken) CrimsonBright else AmberWarning
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Image(
+                                            bitmap = PixelArtSprites.forCompanion(comp.id, comp.broken),
+                                            contentDescription = comp.id.displayName,
+                                            filterQuality = FilterQuality.None,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.size(24.dp)
                                         )
-                                    } else if (comp.id == CompanionId.BROKEN_SOLDIER) {
-                                        Text(
-                                            text = "${comp.hp}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = AgedIvory
-                                        )
+                                        if (alert) {
+                                            Text(
+                                                text = "!",
+                                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                                color = if (comp.broken) CrimsonBright else AmberWarning
+                                            )
+                                        } else if (comp.id == CompanionId.BROKEN_SOLDIER) {
+                                            Text(
+                                                text = "${comp.hp}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = AgedIvory
+                                            )
+                                        }
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // Light Source Toggle & Cycle Chips
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val lightCol = if (state.lightOn && state.lightSource != LightSourceType.NONE && state.lightSourceCharge > 0f) {
+                            AmberWarning
+                        } else AgedWoodLight
+                        Row(
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 68.dp, minHeight = 48.dp)
+                                .clip(CutCornerShape(5.dp))
+                                .background(CharcoalBlack.copy(alpha = 0.84f))
+                                .border(1.2.dp, lightCol, CutCornerShape(5.dp))
+                                .testTag("btn_light_toggle")
+                                .clickable(onClick = onToggleLight)
+                                .padding(horizontal = 7.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Image(
+                                bitmap = PixelArtSprites.forLightSource(state.lightSource),
+                                contentDescription = "Alternar luz",
+                                filterQuality = FilterQuality.None,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = if (state.lightOn && state.lightSource != LightSourceType.NONE) "LUZ ON" else "LUZ OFF",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                                    color = if (state.lightOn) AmberWarning else ParchmentDark
+                                )
+                                Text(
+                                    text = if (state.lightSource.drainPerSec == 0f) "∞" else "${state.lightSourceCharge.toInt()}%",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = AgedIvory
+                                )
+                            }
+                        }
+                        if (state.ownedLightSources.size > 1) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CutCornerShape(5.dp))
+                                    .background(CharcoalBlack.copy(alpha = 0.84f))
+                                    .border(1.dp, TarnishedBrassDim, CutCornerShape(5.dp))
+                                    .testTag("btn_light_cycle")
+                                    .clickable(onClick = onCycleLightSource),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.SwapHoriz, contentDescription = "Cambiar fuente de luz", tint = TarnishedBrass, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+
+                    // Emotion & Contracts Compact Row
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val em = state.emotionState
+                        val emCol = Color(em.fusion?.colorHex ?: em.primary.colorHex)
+                        val emLabel = em.fusion?.displayName
+                            ?: if (em.primary == PatchEmotion.NEUTRAL) "Estable" else "${em.primary.displayName} ${em.level}"
+                        Row(
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .clip(CutCornerShape(5.dp))
+                                .background(CharcoalBlack.copy(alpha = 0.84f))
+                                .border(1.2.dp, emCol, CutCornerShape(5.dp))
+                                .testTag("btn_emotion_status")
+                                .clickable {
+                                    showEmotionDialog = true
+                                    onTogglePause(true)
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Mood, contentDescription = "Estado emocional", tint = emCol, modifier = Modifier.size(16.dp))
+                            Text(
+                                text = emLabel,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = AgedIvory,
+                                maxLines = 1
+                            )
+                        }
+
+                        val openContracts = state.activeContracts.count { !it.completed && !it.failed }
+                        Row(
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 52.dp, minHeight = 48.dp)
+                                .clip(CutCornerShape(5.dp))
+                                .background(CharcoalBlack.copy(alpha = 0.84f))
+                                .border(1.2.dp, if (openContracts > 0) TarnishedBrass else AgedWoodLight, CutCornerShape(5.dp))
+                                .testTag("btn_contracts")
+                                .clickable(onClick = onOpenContractBoard)
+                                .padding(horizontal = 7.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Assignment, contentDescription = "Contratos", tint = TarnishedBrass, modifier = Modifier.size(16.dp))
+                            Text(
+                                text = "$openContracts/2",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = AgedIvory
+                            )
                         }
                     }
                 }
@@ -317,6 +458,7 @@ fun GameScreen(
                 // Alternative Room Objective HUD Pill (top-center when active & no boss bar)
                 val obj = state.roomObjective
                 val loreRoom = state.loreRoom
+                val labState = state.labyrinthState
                 if (obj != null && !obj.completed && !obj.failed && activeBoss == null) {
                     val statusText = when {
                         obj.maxTimerSec > 0f -> "${obj.timerSec.toInt()}s"
@@ -384,11 +526,35 @@ fun GameScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                } else if (labState != null && activeBoss == null) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp, start = 90.dp, end = 92.dp)
+                            .background(CharcoalBlack.copy(alpha = 0.86f), CutCornerShape(5.dp))
+                            .border(1.2.dp, if (labState.perfectRewardClaimed) MutedMoss else AmberWarning, CutCornerShape(5.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = if (labState.perfectRewardClaimed) "${labState.type.displayName} • PERFECTA ✓" else labState.type.displayName.uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = if (labState.perfectRewardClaimed) MutedMoss else AmberWarning,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "C:${labState.chestsOpened}/${labState.chestsTotal} J:${labState.lostToysFound}/${labState.lostToysTotal} P:${if (labState.hiddenPocketFound) "✓" else "✗"} T:${labState.trapsTriggered}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = AgedIvory,
+                            maxLines = 1
+                        )
+                    }
                 }
 
                 // Dynamic Toast Banner (Synergy, Floor, Toybox Memory, Loot)
                 state.activeBanner?.let { banner ->
-                    val hasTopPill = activeBoss != null || state.activeCompanions.isNotEmpty() || (obj != null && !obj.completed && !obj.failed)
+                    val hasTopPill = activeBoss != null || state.activeCompanions.isNotEmpty() || (obj != null && !obj.completed && !obj.failed) || labState != null
                     Column(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
@@ -539,7 +705,22 @@ fun GameScreen(
             )
         }
 
-        if (showBackpack) {
+        if (state.contractBoardOpen) {
+            ContractBoardDialog(
+                state = state,
+                onAccept = onAcceptContract,
+                onAbandon = onAbandonContract,
+                onClose = onCloseContractBoard
+            )
+        } else if (showEmotionDialog) {
+            EmotionStatusDialog(
+                state = state,
+                onClose = {
+                    showEmotionDialog = false
+                    onTogglePause(false)
+                }
+            )
+        } else if (showBackpack) {
             BackpackDialog(
                 state = state,
                 onUseItem = onUseBackpackItem,
@@ -655,8 +836,9 @@ private fun TopGameplayHud(
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             Column(horizontalAlignment = Alignment.End) {
+                val roomLabel = state.currentRoom.subRoomName.ifBlank { state.currentRoom.type.displayName }
                 Text(
-                    text = "P${state.floorNumber}: ${state.currentRoom.type.displayName}",
+                    text = "P${state.floorNumber}: $roomLabel",
                     style = MaterialTheme.typography.labelMedium,
                     color = AgedIvory,
                     maxLines = 1,
@@ -712,14 +894,42 @@ private fun TopGameplayHud(
 @Composable
 private fun MiniMapCanvas(state: GameRunState, modifier: Modifier = Modifier) {
     val forgetful = state.activeDefects.any { it.effects.fogForgetfulness }
+    val secretSense = EmotionSystem.computeModifiers(state.emotionState).secretSenseBonus >= 0.35f
+    val visitedSet = remember(state.dungeon.rooms, state.currentCoord) {
+        state.dungeon.rooms.values.filter { it.visited || it.coord == state.currentCoord }.map { it.coord }.toSet()
+    }
+    val oneHopNeighbors = remember(state.dungeon.rooms, visitedSet) {
+        buildSet {
+            visitedSet.forEach { vc ->
+                val vr = state.dungeon.rooms[vc] ?: return@forEach
+                vr.doors.forEach { dir -> add(vc.neighbor(dir)) }
+                vr.secretDoors.forEach { dir -> add(vc.neighbor(dir)) }
+            }
+        }
+    }
+    val twoHopNeighbors = remember(state.dungeon.rooms, oneHopNeighbors, secretSense) {
+        if (!secretSense) emptySet() else buildSet {
+            oneHopNeighbors.forEach { nc ->
+                val nr = state.dungeon.rooms[nc] ?: return@forEach
+                nr.doors.forEach { dir -> add(nc.neighbor(dir)) }
+            }
+        }
+    }
+
     Canvas(modifier = modifier) {
         val cell = 6.dp.toPx()
         val cx = size.width / 2f
         val cy = size.height / 2f
         val cur = state.currentCoord
         state.dungeon.rooms.values.forEach { r ->
-            val showSecret = r.type.name == "SECRET" && (r.visited || state.toyboxMemory.secretCluesRevealed)
-            if (!r.visited && r.type.name == "SECRET" && !showSecret) return@forEach
+            val isSecret = r.type == RoomType.SECRET
+            val showSecret = isSecret && (r.visited || state.toyboxMemory.secretCluesRevealed || (secretSense && r.coord in oneHopNeighbors))
+            if (isSecret && !showSecret) return@forEach
+
+            val isKnownVisited = r.visited || r.coord == cur
+            val isSilhouette = !isKnownVisited && (r.coord in oneHopNeighbors || r.coord in twoHopNeighbors)
+            if (!isKnownVisited && !isSilhouette) return@forEach
+
             val dx = (r.coord.x - cur.x) * (cell + 1.5f)
             val dy = (r.coord.y - cur.y) * (cell + 1.5f)
             val rx = cx + dx - cell / 2f
@@ -727,15 +937,17 @@ private fun MiniMapCanvas(state: GameRunState, modifier: Modifier = Modifier) {
             if (rx in 0f..(size.width - cell) && ry in 0f..(size.height - cell)) {
                 val col = when {
                     r.coord == cur -> TarnishedBrass
-                    forgetful && r.visited -> ParchmentDark.copy(alpha = 0.5f)
-                    r.type.name == "BOSS" -> CrimsonBright
-                    r.type.name == "TREASURE" -> Color(0xFFD9C05B)
-                    r.type.name == "SHOP" -> MutedMoss
-                    r.type.name == "MANUFACTURER" -> Color(0xFFB388EB)
-                    r.type.name == "LORE" -> Color(0xFF9E7AC8)
-                    r.type.name == "FORBIDDEN" -> CrimsonBlood
-                    r.visited -> AgedIvory.copy(alpha = 0.7f)
-                    else -> AgedWoodLight.copy(alpha = 0.5f)
+                    forgetful && isKnownVisited -> ParchmentDark.copy(alpha = 0.45f)
+                    isSilhouette -> AgedWoodLight.copy(alpha = 0.42f)
+                    r.type == RoomType.BOSS -> CrimsonBright
+                    r.type == RoomType.TREASURE -> Color(0xFFD9C05B)
+                    r.type == RoomType.SHOP -> MutedMoss
+                    r.type == RoomType.REPAIR -> MutedMoss.copy(alpha = 0.85f)
+                    r.type == RoomType.LABYRINTH -> AmberWarning
+                    r.type == RoomType.MANUFACTURER -> Color(0xFFB388EB)
+                    r.type == RoomType.LORE -> Color(0xFF9E7AC8)
+                    r.type == RoomType.FORBIDDEN -> CrimsonBlood
+                    else -> AgedIvory.copy(alpha = 0.72f)
                 }
                 drawRect(col, Offset(rx, ry), Size(cell, cell))
             }

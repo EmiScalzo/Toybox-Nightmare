@@ -118,6 +118,24 @@ enum class InteractableType(
         "Vitrina oxidada que aún conserva fichas dentro.",
         damage = 20f, affectsPlayer = true, affectsEnemies = true, tags = listOf("mechanical", "loot")
     ),
+    NOTICE_BOARD(
+        "Tablón de Contratos", InteractableCategory.ACTIVATABLE, Rarity.COMMON,
+        "Muestra encargos opcionales con recompensas especiales.",
+        "Notas clavadas con alfileres oxidados por antiguos empleados.",
+        damage = 0f, affectsPlayer = false, affectsEnemies = false, tags = listOf("contract", "board")
+    ),
+    FLOOR_LAMP(
+        "Lámpara de Pie", InteractableCategory.ACTIVATABLE, Rarity.COMMON,
+        "Enciende o apaga la luz de la habitación; clave contra espectros velados.",
+        "Pantalla de tela vieja sobre pie de latón.",
+        damage = 0f, affectsPlayer = false, affectsEnemies = true, tags = listOf("light", "switch")
+    ),
+    RECHARGE_STATION(
+        "Estación de Cuerda", InteractableCategory.ACTIVATABLE, Rarity.UNCOMMON,
+        "Recarga batería de linternas y piezas mecánicas; los enemigos mecánicos también la buscan.",
+        "Bobina de taller conectada a los antiguos dinamos.",
+        damage = 0f, affectsPlayer = true, affectsEnemies = true, tags = listOf("electric", "mechanical")
+    ),
 
     // C. Destructibles
     HANGING_SHELF(

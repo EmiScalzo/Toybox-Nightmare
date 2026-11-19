@@ -62,6 +62,14 @@ fun RunSetupScreen(
                 .padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            ToyboxVisualBanner(
+                drawableRes = com.example.R.drawable.img_menu_sprites_showcase,
+                badge = "Vitrina de Muñecos",
+                caption = "Elige tu muñeco entre las sombras de Wonderland Toys",
+                contentDescription = "Estantería ilustrada de muñecos de Wonderland",
+                heightDp = 110
+            )
+
             // Character Selector Carousel
             Text(
                 text = "ESTANTERÍA DE PERSONAJES",

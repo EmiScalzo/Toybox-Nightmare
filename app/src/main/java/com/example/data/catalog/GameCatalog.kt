@@ -787,12 +787,158 @@ object GameCatalog {
     )
 
     val floors: List<FloorTheme> = listOf(
-        FloorTheme(1, "Sala de Exhibición", "Vitrinas rotas y cajas abiertas", EnemyType.BOSS_VENDEDOR, 0xFF231B18, 0xFF140F0E, 0x22C89948, altBossType = EnemyType.BOSS_BOTONERO),
-        FloorTheme(2, "Taller de Reparaciones", "Mesas de sastre y agujas oxidadas", EnemyType.BOSS_COSTURERA, 0xFF20181A, 0xFF120C0E, 0x22942229, altBossType = EnemyType.BOSS_TITIRITERO),
-        FloorTheme(3, "Guardería", "Cunas silenciosas y dibujos en la pared", EnemyType.BOSS_NINERA, 0xFF1B201E, 0xFF0F1312, 0x22597354, altBossType = EnemyType.BOSS_RELOJERO),
-        FloorTheme(4, "Parque de Diversiones", "Carruseles detenidos en la oscuridad", EnemyType.BOSS_MAESTRO, 0xFF221C16, 0xFF130F0B, 0x22D98A2B, altBossType = EnemyType.BOSS_BUHONERO),
-        FloorTheme(5, "Depósito de los Olvidados", "Montañas de juguetes descartados", EnemyType.BOSS_COLECCIONISTA, 0xFF1A1B20, 0xFF0E0F13, 0x224C5F6E),
-        FloorTheme(6, "Corazón de Wonderland", "El taller donde todo comenzó", EnemyType.BOSS_MADRE, 0xFF1D1014, 0xFF0D0709, 0x33D13B42)
+        FloorTheme(
+            floorNumber = 1,
+            name = "Juguetería Abandonada",
+            subtitle = "Vitrinas rotas, mostradores y pasillos de exhibición",
+            bossType = EnemyType.BOSS_VENDEDOR,
+            floorColorHex = 0xFF231B18,
+            wallColorHex = 0xFF140F0E,
+            ambientTintHex = 0x22C89948,
+            altBossType = EnemyType.BOSS_BOTONERO,
+            visualProfile = FloorVisualProfile(
+                style = FloorArchitecturalStyle.TOY_SHOP,
+                floorPaletteHexes = listOf(0xFF231B18, 0xFF2A1E18, 0xFF1E1815),
+                wallColorHex = 0xFF140F0E,
+                trimColorHex = 0xFFC89948,
+                subRoomNames = listOf("Pasillo de Vitrinas", "Mostrador de Botones", "Escape de Estanterías", "Trastienda de Cajas"),
+                darknessBias = 0.25f,
+                exclusiveMechanicHint = "Exhibición: vitrinas de cristal frágiles y luces tenues de escaparate."
+            )
+        ),
+        FloorTheme(
+            floorNumber = 2,
+            name = "La Fábrica de Juguetes",
+            subtitle = "Cintas metálicas, chispas, prensas y engranajes",
+            bossType = EnemyType.BOSS_COSTURERA,
+            floorColorHex = 0xFF211C1B,
+            wallColorHex = 0xFF121011,
+            ambientTintHex = 0x26D98A2B,
+            altBossType = EnemyType.BOSS_TITIRITERO,
+            visualProfile = FloorVisualProfile(
+                style = FloorArchitecturalStyle.FACTORY,
+                floorPaletteHexes = listOf(0xFF211C1B, 0xFF262220, 0xFF1B1B1D),
+                wallColorHex = 0xFF121011,
+                trimColorHex = 0xFFD98A2B,
+                subRoomNames = listOf("Línea de Ensamblaje", "Sala de Prensas", "Caldera de Cuerda", "Taller de Costura"),
+                darknessBias = 0.40f,
+                exclusiveMechanicHint = "Fábrica: cintas de movimiento, estaciones de recarga y chispas eléctricas."
+            )
+        ),
+        FloorTheme(
+            floorNumber = 3,
+            name = "El Dormitorio Gigante",
+            subtitle = "Alfombras descoloridas, lámparas nocturnas y sombras bajo la cama",
+            bossType = EnemyType.BOSS_NINERA,
+            floorColorHex = 0xFF1B2021,
+            wallColorHex = 0xFF0E1214,
+            ambientTintHex = 0x24597354,
+            altBossType = EnemyType.BOSS_RELOJERO,
+            visualProfile = FloorVisualProfile(
+                style = FloorArchitecturalStyle.BEDROOM,
+                floorPaletteHexes = listOf(0xFF1B2021, 0xFF221E28, 0xFF18221D),
+                wallColorHex = 0xFF0E1214,
+                trimColorHex = 0xFF6B8A72,
+                subRoomNames = listOf("Rincón de Cunas", "Bajo la Cama", "Armario Entreabierto", "Cuarto de Relojes"),
+                darknessBias = 0.62f,
+                exclusiveMechanicHint = "Dormitorio: lámparas nocturnas, juguetes inmóviles y sombras acechantes."
+            )
+        ),
+        FloorTheme(
+            floorNumber = 4,
+            name = "El Depósito de Cajas",
+            subtitle = "Torres de madera, corredores estrechos y objetos sellados",
+            bossType = EnemyType.BOSS_MAESTRO,
+            floorColorHex = 0xFF241C14,
+            wallColorHex = 0xFF140E09,
+            ambientTintHex = 0x24B58443,
+            altBossType = EnemyType.BOSS_BUHONERO,
+            visualProfile = FloorVisualProfile(
+                style = FloorArchitecturalStyle.DEPOT,
+                floorPaletteHexes = listOf(0xFF241C14, 0xFF2A2117, 0xFF1D1711),
+                wallColorHex = 0xFF140E09,
+                trimColorHex = 0xFFB58443,
+                subRoomNames = listOf("Estantería Norte", "Pila de Cajas", "Muelle de Carga", "Archivo Embalado"),
+                darknessBias = 0.55f,
+                exclusiveMechanicHint = "Depósito: cajas destruibles, imitadores camuflados y ladrones."
+            )
+        ),
+        FloorTheme(
+            floorNumber = 5,
+            name = "El Teatro de Marionetas",
+            subtitle = "Cortinas carmesí, focos móviles y cuerdas sobre el escenario",
+            bossType = EnemyType.BOSS_TITIRITERO,
+            floorColorHex = 0xFF251418,
+            wallColorHex = 0xFF12080B,
+            ambientTintHex = 0x29942229,
+            altBossType = EnemyType.BOSS_MAESTRO,
+            visualProfile = FloorVisualProfile(
+                style = FloorArchitecturalStyle.THEATER,
+                floorPaletteHexes = listOf(0xFF251418, 0xFF2C171E, 0xFF1B1014),
+                wallColorHex = 0xFF12080B,
+                trimColorHex = 0xFFD13B42,
+                subRoomNames = listOf("Escenario Principal", "Palco de Marionetas", "Camerino Oculto", "Tramoya de Hilos"),
+                darknessBias = 0.58f,
+                exclusiveMechanicHint = "Teatro: reflectores parpadeantes, hilos tensos y payasos que atemorizan."
+            )
+        ),
+        FloorTheme(
+            floorNumber = 6,
+            name = "El Museo de Piezas",
+            subtitle = "Vitrinas antiguas, maniquíes y reliquias protegidas",
+            bossType = EnemyType.BOSS_COLECCIONISTA,
+            floorColorHex = 0xFF181D22,
+            wallColorHex = 0xFF0D1014,
+            ambientTintHex = 0x264C6D8A,
+            altBossType = EnemyType.BOSS_RELOJERO,
+            visualProfile = FloorVisualProfile(
+                style = FloorArchitecturalStyle.MUSEUM,
+                floorPaletteHexes = listOf(0xFF181D22, 0xFF1D2229, 0xFF14181E),
+                wallColorHex = 0xFF0D1014,
+                trimColorHex = 0xFF7D9BB5,
+                subRoomNames = listOf("Galería de Porcelana", "Ala de Reliquias", "Cámara de Espejos", "Sala de Bustos"),
+                darknessBias = 0.48f,
+                exclusiveMechanicHint = "Museo: porcelana blindada, reflejos traicioneros y centinelas de élite."
+            )
+        ),
+        FloorTheme(
+            floorNumber = 7,
+            name = "El Subsuelo Inundado",
+            subtitle = "Charcos oscuros, cables vivos, rieles oxidados y niebla fría",
+            bossType = EnemyType.BOSS_SUBSUELO,
+            floorColorHex = 0xFF131B1E,
+            wallColorHex = 0xFF090E10,
+            ambientTintHex = 0x2B3B6B7A,
+            altBossType = EnemyType.BOSS_BUHONERO,
+            visualProfile = FloorVisualProfile(
+                style = FloorArchitecturalStyle.SUBSOIL,
+                floorPaletteHexes = listOf(0xFF131B1E, 0xFF172125, 0xFF101619),
+                wallColorHex = 0xFF090E10,
+                trimColorHex = 0xFF4F8CA0,
+                subRoomNames = listOf("Túnel Inundado", "Vía de Carga", "Cámara de Fusibles", "Alcantarilla de Cuerda"),
+                darknessBias = 0.78f,
+                exclusiveMechanicHint = "Subsuelo: cables energizados, vapor caliente y espectros velados en la penumbra."
+            )
+        ),
+        FloorTheme(
+            floorNumber = 8,
+            name = "El Taller del Fabricante",
+            subtitle = "El corazón secreto donde nacieron todos los juguetes",
+            bossType = EnemyType.BOSS_FABRICANTE,
+            floorColorHex = 0xFF1E1115,
+            wallColorHex = 0xFF0E070A,
+            ambientTintHex = 0x33C89948,
+            altBossType = EnemyType.BOSS_MADRE,
+            visualProfile = FloorVisualProfile(
+                style = FloorArchitecturalStyle.WORKSHOP,
+                floorPaletteHexes = listOf(0xFF1E1115, 0xFF26171C, 0xFF160D11),
+                wallColorHex = 0xFF0E070A,
+                trimColorHex = 0xFFE5A93B,
+                subRoomNames = listOf("Banco del Creador", "Altar de Planos", "Bóveda de Prototipos", "Corazón de Wonderland"),
+                darknessBias = 0.65f,
+                exclusiveMechanicHint = "Taller Final: todos los sistemas convergen ante El Fabricante y La Madre."
+            )
+        )
     )
 
     val events: List<RoomEventDef> = listOf(

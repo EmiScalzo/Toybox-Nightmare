@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -76,34 +77,68 @@ fun RunSummaryScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        // Scene Canvas: Disassembled doll on wooden floor OR triumphant open exit light
-        Canvas(
+        // Scene Visual Card: Illustrated Exit Door (Victory) or Sealed Box (Defeat) + Character Sprite
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(130.dp)
-                .background(AgedWoodDark, CutCornerShape(6.dp))
+                .height(144.dp)
+                .clip(CutCornerShape(6.dp))
                 .border(1.5.dp, if (state.isVictory) TarnishedBrass else CrimsonBlood, CutCornerShape(6.dp))
         ) {
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val col = Color(state.character.primaryColorHex)
-            if (state.isVictory) {
-                drawRect(TarnishedBrass.copy(alpha = 0.2f), Offset(cx - 40f, 12f), Size(80f, size.height - 24f))
-                drawCircle(col, 24f, Offset(cx, cy - 12f))
-                drawRoundRect(col, Offset(cx - 18f, cy + 12f), Size(36f, 36f), CornerRadius(6f))
-            } else {
-                // Disassembled head, torso, detached arm & cotton puffs
-                drawCircle(CottonWhite.copy(alpha = 0.7f), 10f, Offset(cx - 70f, cy + 20f))
-                drawCircle(CottonWhite.copy(alpha = 0.6f), 8f, Offset(cx + 62f, cy - 18f))
-                rotate(-28f, Offset(cx - 35f, cy)) {
-                    drawRoundRect(col, Offset(cx - 55f, cy - 18f), Size(34f, 40f), CornerRadius(6f))
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(
+                    id = if (state.isVictory) com.example.R.drawable.img_menu_play_door_sprite
+                    else com.example.R.drawable.img_menu_challenges_box
+                ),
+                contentDescription = if (state.isVictory) "Puerta de salida de Wonderland" else "Caja de madera cerrada",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            listOf(
+                                CharcoalBlack.copy(alpha = 0.85f),
+                                CharcoalBlack.copy(alpha = 0.45f),
+                                CharcoalBlack.copy(alpha = 0.80f)
+                            )
+                        )
+                    )
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                com.example.ui.components.DollPortraitCanvas(
+                    character = state.character,
+                    modifier = Modifier
+                        .size(92.dp)
+                        .border(1.5.dp, if (state.isVictory) TarnishedBrass else CrimsonBright, CutCornerShape(6.dp))
+                        .background(CharcoalBlack.copy(alpha = 0.72f), CutCornerShape(6.dp))
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (state.isVictory) "PUERTA ABIERTA" else "FIN DEL INTENTO",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (state.isVictory) TarnishedBrass else CrimsonBright
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = state.character.name,
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                        color = AgedIvory
+                    )
+                    Text(
+                        text = "Piso ${state.floorNumber}: ${state.floorTheme.name}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Parchment
+                    )
                 }
-                rotate(42f, Offset(cx + 30f, cy + 16f)) {
-                    drawRoundRect(col, Offset(cx + 12f, cy + 8f), Size(42f, 12f), CornerRadius(4f))
-                }
-                drawCircle(col, 22f, Offset(cx + 22f, cy - 18f))
-                drawCircle(CharcoalBlack, 4f, Offset(cx + 15f, cy - 22f))
-                drawCircle(Color(state.character.accentColorHex), 4f, Offset(cx + 29f, cy - 22f))
             }
         }
 

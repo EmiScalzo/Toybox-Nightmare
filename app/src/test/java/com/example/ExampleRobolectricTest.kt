@@ -11,6 +11,7 @@ import com.example.data.model.CompanionId
 import com.example.data.model.ConsumableType
 import com.example.data.model.EnemyType
 import com.example.data.model.InteractableType
+import com.example.data.model.LightSourceType
 import com.example.data.model.LoreProp
 import com.example.data.model.LorePropKind
 import com.example.data.model.RepairMaterial
@@ -37,7 +38,7 @@ class ExampleRobolectricTest {
 
   @Test
   fun `all pixel art sprites and object icons render with valid dimensions`() {
-    assertEquals(31, EnemyType.entries.size)
+    assertEquals(36, EnemyType.entries.size)
     EnemyType.entries.forEach { enemy ->
       val bmp = PixelArtSprites.forEnemy(enemy, disguised = false)
       assertTrue("${enemy.name} invalid size", bmp.width >= 12 && bmp.height >= 10)
@@ -87,10 +88,19 @@ class ExampleRobolectricTest {
     assertTrue(PixelArtSprites.companionBellProp().width >= 10)
     assertTrue(PixelArtSprites.manufacturerNpc().width >= 12)
 
-    assertEquals(24, InteractableType.entries.size)
+    assertEquals(27, InteractableType.entries.size)
     InteractableType.entries.forEach { inter ->
       val bmp = PixelArtSprites.forInteractable(inter, active = true, destroyed = false)
       assertTrue("${inter.name} invalid size", bmp.width >= 10 && bmp.height >= 5)
+    }
+
+    LightSourceType.entries.forEach { lt ->
+      val bmp = PixelArtSprites.forLightSource(lt)
+      assertTrue("${lt.name} invalid size", bmp.width >= 6 && bmp.height >= 5)
+    }
+    assertTrue(PixelArtSprites.lostToyToken().width >= 8)
+    listOf("surprise_box", "puppet_anchor", "rail_switch", "overheat_vent").forEach { kind ->
+      assertTrue("$kind invalid size", PixelArtSprites.forBossProp(kind, active = true).width >= 10)
     }
 
     assertEquals(5, SecretClueType.entries.size)

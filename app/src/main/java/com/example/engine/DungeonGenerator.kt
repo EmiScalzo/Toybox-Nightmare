@@ -3,7 +3,10 @@ package com.example.engine
 import com.example.data.catalog.GameCatalog
 import com.example.data.model.Difficulty
 import com.example.data.model.Direction
+import com.example.data.model.EmergentRoomScenario
 import com.example.data.model.EnemyType
+import com.example.data.model.LabyrinthType
+import com.example.data.model.RoomLightingMode
 import com.example.data.model.RoomMechanic
 import com.example.data.model.RoomType
 import com.example.data.model.SecretRoomFlavor
@@ -24,7 +27,7 @@ data class ObstacleRect(
     val y: Float,
     val w: Float,
     val h: Float,
-    val kind: Int // 0 = wooden crate, 1 = glass vitrine, 2 = needle table, 3 = iron pillar, 4 = toy pile
+    val kind: Int // 0 = wooden crate, 1 = glass vitrine, 2 = needle table, 3 = iron pillar, 4 = toy pile, 5 = nursery block
 )
 
 data class RoomBlueprint(
@@ -43,7 +46,12 @@ data class RoomBlueprint(
     var eventResolved: Boolean = false,
     val visualVariant: Int = 0,
     val mechanic: RoomMechanic = RoomMechanic.NONE,
-    val secretFlavor: SecretRoomFlavor? = null
+    val secretFlavor: SecretRoomFlavor? = null,
+    val lightingMode: RoomLightingMode = RoomLightingMode.LIT,
+    val subRoomName: String = "",
+    val emergentScenario: EmergentRoomScenario = EmergentRoomScenario.STANDARD,
+    val labyrinthType: LabyrinthType? = null,
+    val paletteIdx: Int = 0
 )
 
 data class EnemySpawn(
@@ -169,6 +177,15 @@ object DungeonGenerator {
             }
         }
 
+        // Dedicated Labyrinth Room on floors >= 2 (and occasional on floor 1)
+        if (floorNumber >= 2 || rng.nextFloat() < 0.65f) {
+            val labSpot = (coords - typeMap.keys).randomOrNull(rng)
+            if (labSpot != null) {
+                availableSpecial.remove(labSpot)
+                typeMap[labSpot] = RoomType.LABYRINTH
+            }
+        }
+
         // Optional secret room
         var secretCoord: GridCoord? = null
         if (rng.nextFloat() < 0.65f + secretBonusChance) {
@@ -202,6 +219,9 @@ object DungeonGenerator {
         val floorTheme = GameCatalog.floors[(floorNumber - 1).coerceIn(0, GameCatalog.floors.lastIndex)]
         val floorBoss = listOfNotNull(floorTheme.bossType, floorTheme.altBossType).random(rng)
         val rooms = mutableMapOf<GridCoord, RoomBlueprint>()
+        val subRoomPool = floorTheme.visualProfile?.subRoomNames?.takeIf { it.isNotEmpty() }
+            ?: listOf(floorTheme.name)
+        val darknessBias = floorTheme.visualProfile?.darknessBias ?: 0.35f
 
         for (c in coords) {
             val type = typeMap[c] ?: RoomType.COMBAT
@@ -223,23 +243,76 @@ object DungeonGenerator {
                 RoomType.REPAIR, RoomType.EVENT, RoomType.SECRET, RoomType.MANUFACTURER, RoomType.LORE
             )
             val mechanic = rollRoomMechanic(type, floorNumber, difficulty, rng)
-            val obstacles = if (mechanic == RoomMechanic.NURSERY_MAZE) {
-                generateNurseryMazeObstacles(rng)
-            } else {
-                generateObstacles(type, rng)
+            val labyrinthType = if (type == RoomType.LABYRINTH) {
+                when (floorNumber) {
+                    2 -> LabyrinthType.FACTORY_MAZE
+                    3, 5 -> LabyrinthType.DOLLS_MAZE
+                    6 -> LabyrinthType.MIRRORS_MAZE
+                    else -> LabyrinthType.entries.random(rng)
+                }
+            } else null
+
+            val lightingMode = rollRoomLightingMode(type, mechanic, floorNumber, darknessBias, rng)
+            val emergentScenario = rollEmergentScenario(type, floorNumber, rng)
+
+            val obstacles = when {
+                type == RoomType.LABYRINTH -> generateNurseryMazeObstacles(rng)
+                mechanic == RoomMechanic.NURSERY_MAZE -> generateNurseryMazeObstacles(rng)
+                else -> generateObstacles(type, rng)
             }
             val enemies = when {
                 type == RoomType.BOSS -> listOf(EnemySpawn(floorBoss, 0.5f, 0.26f))
-                type == RoomType.CHALLENGE -> generateEnemies(floorNumber, count = 4 + floorNumber.coerceAtMost(2), mechanic, obstacles, rng)
-                type == RoomType.COMBAT -> generateEnemies(floorNumber, count = (2 + floorNumber / 2 + rng.nextInt(2)).coerceAtMost(5), mechanic, obstacles, rng)
-                type == RoomType.CURSE || type == RoomType.FORBIDDEN -> generateEnemies(floorNumber, count = 3, mechanic, obstacles, rng)
+                type == RoomType.LABYRINTH -> generateEnemies(
+                    floorNumber,
+                    count = 3 + (floorNumber / 3).coerceAtMost(2),
+                    mechanic,
+                    lightingMode,
+                    emergentScenario,
+                    obstacles,
+                    rng,
+                    includeSentinel = true
+                )
+                type == RoomType.CHALLENGE -> generateEnemies(
+                    floorNumber,
+                    count = 4 + (floorNumber / 2).coerceAtMost(3),
+                    mechanic,
+                    lightingMode,
+                    emergentScenario,
+                    obstacles,
+                    rng
+                )
+                type == RoomType.COMBAT -> generateEnemies(
+                    floorNumber,
+                    count = (2 + floorNumber / 2 + rng.nextInt(2)).coerceAtMost(6),
+                    mechanic,
+                    lightingMode,
+                    emergentScenario,
+                    obstacles,
+                    rng
+                )
+                type == RoomType.CURSE || type == RoomType.FORBIDDEN -> generateEnemies(
+                    floorNumber,
+                    count = 3 + if (floorNumber >= 5) 1 else 0,
+                    mechanic,
+                    lightingMode,
+                    emergentScenario,
+                    obstacles,
+                    rng,
+                    includeSentinel = floorNumber >= 3
+                )
                 else -> emptyList()
             }
 
             val eventId = if (type == RoomType.EVENT) GameCatalog.events.random(rng).id else null
-            val shopStock = if (type == RoomType.SHOP) buildShopStock(rng) else emptyList()
+            val shopStock = if (type == RoomType.SHOP) buildShopStock(floorNumber, rng) else emptyList()
             val variant = ((c.x * 7 + c.y * 13 + floorNumber * 3 + rng.nextInt(4)) and 0x7FFFFFFF) % 4
             val flavor = if (type == RoomType.SECRET) SecretRoomFlavor.entries.random(rng) else null
+            val paletteIdx = ((c.x * 3 + c.y * 5 + floorNumber) and 0x7FFFFFFF) % 3
+            val subName = when (type) {
+                RoomType.COMBAT, RoomType.CHALLENGE -> subRoomPool[((abs(c.x) + abs(c.y) + floorNumber) % subRoomPool.size)]
+                RoomType.LABYRINTH -> labyrinthType?.displayName ?: type.displayName
+                else -> type.displayName
+            }
 
             rooms[c] = RoomBlueprint(
                 coord = c,
@@ -254,7 +327,12 @@ object DungeonGenerator {
                 shopStock = shopStock,
                 visualVariant = variant,
                 mechanic = mechanic,
-                secretFlavor = flavor
+                secretFlavor = flavor,
+                lightingMode = lightingMode,
+                subRoomName = subName,
+                emergentScenario = emergentScenario,
+                labyrinthType = labyrinthType,
+                paletteIdx = paletteIdx
             )
         }
 
@@ -387,12 +465,59 @@ object DungeonGenerator {
         }
     }
 
+    private fun rollRoomLightingMode(
+        type: RoomType,
+        mechanic: RoomMechanic,
+        floorNumber: Int,
+        darknessBias: Float,
+        rng: Random
+    ): RoomLightingMode {
+        if (type in setOf(RoomType.START, RoomType.SHOP, RoomType.REPAIR, RoomType.TREASURE)) {
+            return RoomLightingMode.LIT
+        }
+        if (mechanic == RoomMechanic.FLICKERING_LIGHTS) return RoomLightingMode.FLICKERING
+        if (type == RoomType.SECRET) return RoomLightingMode.DARK
+        if (type == RoomType.FORBIDDEN) {
+            return if (floorNumber >= 4) RoomLightingMode.TOTAL_DARKNESS else RoomLightingMode.DARK
+        }
+        val roll = rng.nextFloat() + darknessBias * 0.45f
+        return when {
+            floorNumber >= 6 && roll > 1.05f -> RoomLightingMode.TOTAL_DARKNESS
+            roll > 0.85f -> RoomLightingMode.DARK
+            roll > 0.65f -> RoomLightingMode.FLICKERING
+            roll > 0.42f -> RoomLightingMode.DIM
+            else -> RoomLightingMode.LIT
+        }
+    }
+
+    private fun rollEmergentScenario(
+        type: RoomType,
+        floorNumber: Int,
+        rng: Random
+    ): EmergentRoomScenario {
+        if (type !in setOf(RoomType.COMBAT, RoomType.CHALLENGE, RoomType.LABYRINTH)) {
+            return EmergentRoomScenario.STANDARD
+        }
+        val roll = rng.nextFloat()
+        return when {
+            roll < 0.18f -> EmergentRoomScenario.SLEEPING_DEN
+            roll < 0.34f -> EmergentRoomScenario.FACTION_SKIRMISH
+            roll < 0.48f -> EmergentRoomScenario.GUARDING_VALUABLE
+            roll < 0.60f && floorNumber >= 2 -> EmergentRoomScenario.RECHARGE_STATION
+            roll < 0.70f -> EmergentRoomScenario.TRAPPED_ALLY
+            else -> EmergentRoomScenario.STANDARD
+        }
+    }
+
     private fun generateEnemies(
         floor: Int,
         count: Int,
         mechanic: RoomMechanic,
+        lightingMode: RoomLightingMode,
+        scenario: EmergentRoomScenario,
         obstacles: List<ObstacleRect>,
-        rng: Random
+        rng: Random,
+        includeSentinel: Boolean = false
     ): List<EnemySpawn> {
         val pool = mutableListOf(
             EnemyType.TIN_SOLDIER,
@@ -411,18 +536,27 @@ object DungeonGenerator {
             pool.add(EnemyType.PORCELAIN_CLOWN)
             pool.add(EnemyType.BODYGUARD_BEAR)
             pool.add(EnemyType.STITCH_MECHANIC)
+            pool.add(EnemyType.LAMP_SNUFFER)
         }
-        if (floor >= 3) {
+        if (floor >= 3 || lightingMode in setOf(RoomLightingMode.DARK, RoomLightingMode.TOTAL_DARKNESS)) {
             pool.add(EnemyType.MIMIC_CHEST)
             pool.add(EnemyType.SHADOW_PUPPET)
             pool.add(EnemyType.RAG_BOMBER)
+            pool.add(EnemyType.VEILED_SPECTER)
         }
         if (floor >= 4) {
             pool.add(EnemyType.RUSTY_TIN_KNIGHT)
+            pool.add(EnemyType.CLOCKWORK_SENTINEL)
         }
         val list = mutableListOf<EnemySpawn>()
         for (i in 0 until count) {
             val type = when {
+                includeSentinel && i == 0 -> EnemyType.CLOCKWORK_SENTINEL
+                scenario == EmergentRoomScenario.FACTION_SKIRMISH && i == 0 -> EnemyType.TIN_SOLDIER
+                scenario == EmergentRoomScenario.FACTION_SKIRMISH && i == 1 -> EnemyType.PLUSH_BEAR
+                scenario == EmergentRoomScenario.RECHARGE_STATION && i == 0 -> EnemyType.CLOCKWORK_SENTINEL
+                scenario == EmergentRoomScenario.GUARDING_VALUABLE && i == 0 -> EnemyType.BODYGUARD_BEAR
+                lightingMode == RoomLightingMode.TOTAL_DARKNESS && i == 0 -> EnemyType.VEILED_SPECTER
                 mechanic == RoomMechanic.DONT_BLINK_STATUES && i < 2 -> EnemyType.WEEPING_TOY
                 mechanic == RoomMechanic.MIRROR_COPIES && i < 2 -> EnemyType.MIRROR_COPY
                 else -> pool.random(rng)
@@ -443,7 +577,7 @@ object DungeonGenerator {
         return list
     }
 
-    private fun buildShopStock(rng: Random): List<ShopOffer> {
+    private fun buildShopStock(floorNumber: Int, rng: Random): List<ShopOffer> {
         val part = GameCatalog.bodyParts.filter { it.rarity.ordinal >= 1 }.random(rng)
         val item = GameCatalog.passiveItems.random(rng)
         val backpackOffer = if (rng.nextFloat() < 0.55f) {
@@ -451,10 +585,19 @@ object DungeonGenerator {
         } else {
             ShopOffer("shop_bp_tier", "Mochila Infantil (4 Espacios)", price = 6, itemId = "backpack_tier:KIDS_BACKPACK")
         }
+        val lightOffer = when {
+            floorNumber >= 3 && rng.nextFloat() < 0.5f ->
+                ShopOffer("shop_light", "Farol Mecánico (Luz + Pistas)", price = 7, itemId = "light:MECHANICAL_LANTERN")
+            rng.nextFloat() < 0.5f ->
+                ShopOffer("shop_light", "Linterna de Taller (Haz Largo)", price = 5, itemId = "light:FLASHLIGHT")
+            else ->
+                ShopOffer("shop_light", "Juguete Luminoso (Calma Miedo)", price = 6, itemId = "light:GLOWING_TOY")
+        }
         return listOf(
             ShopOffer("shop_heal", "Corazón de Algodón (+1 Vida)", price = 4, isHeal = true),
             ShopOffer("shop_kit", "Kit de Costura (+45 Durab.)", price = 4, isConsumable = true, itemId = "SEWING_KIT"),
             backpackOffer,
+            lightOffer,
             ShopOffer("shop_bp_item", "Fardo para Mochila (Materiales)", price = 5, itemId = "backpack_item:CRAFTING_BUNDLE"),
             ShopOffer("shop_part", "${part.name} (${part.zone.shortLabel})", price = 8, isBodyPart = true, itemId = part.id),
             ShopOffer("shop_item", item.name, price = 10, itemId = item.id)

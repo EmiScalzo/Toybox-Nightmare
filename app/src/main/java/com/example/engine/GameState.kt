@@ -51,7 +51,18 @@ data class ActiveEnemy(
     val protectedAllyId: Long? = null,
     val protectedCageId: Long? = null,
     val role: EnemyRole = EnemyRole.STANDARD,
-    val faction: EnemyFaction = EnemyFaction.VOID_SHADOW
+    val faction: EnemyFaction = EnemyFaction.VOID_SHADOW,
+    val alertState: EnemyAlertState = EnemyAlertState.COMBAT,
+    val suspicion: Float = 0f,
+    val alertTimer: Float = 0f,
+    val darknessTrait: DarknessEnemyTrait = DarknessEnemyTrait.NONE,
+    val materialType: EnemyMaterialType = EnemyMaterialType.CLOTH,
+    val isSleeping: Boolean = false,
+    val scareTimer: Float = 0f,
+    val bossCurrentPhase: Int = 1,
+    val bossArmorActive: Boolean = false,
+    val bossVulnerabilityTimer: Float = 0f,
+    val bossOverheatMeter: Float = 0f
 )
 
 enum class PickupKind {
@@ -66,7 +77,9 @@ enum class PickupKind {
     MATERIAL,
     GEAR_TOKEN,
     BACKPACK_ITEM,
-    BACKPACK_TIER
+    BACKPACK_TIER,
+    LIGHT_SOURCE,
+    LOST_TOY_TOKEN
 }
 
 data class GroundPickup(
@@ -120,7 +133,10 @@ data class ActiveCompanion(
     val roomsHeld: Int = 0,
     val giftsOffered: Int = 0,
     val consecutiveDamagedRooms: Int = 0,
-    val needsAttention: Boolean = false
+    val needsAttention: Boolean = false,
+    val xp: Int = 0,
+    val evolved: Boolean = false,
+    val evolvedTitle: String? = null
 )
 
 data class CompanionChoiceOption(
@@ -260,7 +276,9 @@ data class SavedRoomState(
     val roomAnomalies: List<RoomAnomaly> = emptyList(),
     val roomObjective: RoomObjectiveState? = null,
     val manufacturerNpc: ManufacturerNpcState? = null,
-    val alarmBellPos: Pair<Float, Float>? = null
+    val alarmBellPos: Pair<Float, Float>? = null,
+    val roomLamps: List<RoomLampProp> = emptyList(),
+    val labyrinthState: LabyrinthState? = null
 )
 
 data class GameRunState(
@@ -384,5 +402,20 @@ data class GameRunState(
     val backpackItems: List<BackpackSlotItem> = emptyList(),
     val pendingArchiveDiscovery: PendingArchiveDiscovery? = null,
     val unlockedArchiveIdsThisRun: Set<String> = emptySet(),
-    val lorePuzzlesSolvedThisRun: Int = 0
+    val lorePuzzlesSolvedThisRun: Int = 0,
+
+    // Master Expansion: Lighting, Emotions, Contracts, Labyrinths, Boss Mechanics & Companion Synergies
+    val lightSource: LightSourceType = LightSourceType.NONE,
+    val lightSourceCharge: Float = 100f,
+    val lightOn: Boolean = true,
+    val ownedLightSources: List<LightSourceType> = emptyList(),
+    val roomLamps: List<RoomLampProp> = emptyList(),
+    val emotionState: EmotionState = EmotionState(),
+    val activeContracts: List<ActiveContract> = emptyList(),
+    val contractBoardOpen: Boolean = false,
+    val availableContracts: List<ContractDef> = emptyList(),
+    val completedContractsCount: Int = 0,
+    val labyrinthState: LabyrinthState? = null,
+    val bossArenaProps: List<BossArenaProp> = emptyList(),
+    val activeCompanionSynergyTitle: String? = null
 )

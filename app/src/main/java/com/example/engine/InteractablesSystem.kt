@@ -14,9 +14,22 @@ object InteractablesSystem {
         obstacles: List<ObstacleRect>,
         objective: RoomObjectiveState?,
         allocId: () -> Long,
-        rng: Random = Random.Default
+        rng: Random = Random.Default,
+        lightingMode: RoomLightingMode = RoomLightingMode.LIT
     ): List<RoomInteractable> {
-        if (roomType in setOf(RoomType.START, RoomType.TREASURE, RoomType.SHOP, RoomType.REPAIR, RoomType.MANUFACTURER)) {
+        if (roomType == RoomType.START) {
+            return listOf(placeSafe(InteractableType.NOTICE_BOARD, ARENA_W * 0.16f, ARENA_H * 0.18f, obstacles, allocId))
+        }
+        if (roomType == RoomType.SHOP) {
+            return listOf(placeSafe(InteractableType.NOTICE_BOARD, ARENA_W * 0.18f, ARENA_H * 0.22f, obstacles, allocId))
+        }
+        if (roomType == RoomType.REPAIR) {
+            return listOf(
+                placeSafe(InteractableType.RECHARGE_STATION, ARENA_W * 0.82f, ARENA_H * 0.22f, obstacles, allocId),
+                placeSafe(InteractableType.NOTICE_BOARD, ARENA_W * 0.18f, ARENA_H * 0.22f, obstacles, allocId)
+            )
+        }
+        if (roomType in setOf(RoomType.TREASURE, RoomType.MANUFACTURER)) {
             return emptyList()
         }
         if (roomType == RoomType.BOSS) {
@@ -86,6 +99,20 @@ object InteractablesSystem {
         // Ensure any lever/wire/shelf gets a matching partner when needed
         if (list.any { it.type == InteractableType.LIVE_WIRE } && list.none { it.type == InteractableType.WALL_LEVER }) {
             list.add(placeSafe(InteractableType.WALL_LEVER, ARENA_W * 0.16f, ARENA_H * 0.5f, obstacles, allocId))
+        }
+        if (lightingMode != RoomLightingMode.LIT &&
+            roomType in setOf(RoomType.COMBAT, RoomType.CHALLENGE, RoomType.CURSE, RoomType.FORBIDDEN, RoomType.LABYRINTH) &&
+            list.none { it.type == InteractableType.FLOOR_LAMP }
+        ) {
+            val initiallyLit = lightingMode == RoomLightingMode.DIM || lightingMode == RoomLightingMode.FLICKERING
+            list.add(placeSafe(InteractableType.FLOOR_LAMP, ARENA_W * 0.22f, ARENA_H * 0.24f, obstacles, allocId).copy(active = initiallyLit))
+        }
+        if (floorNumber >= 2 &&
+            roomType in setOf(RoomType.COMBAT, RoomType.LABYRINTH) &&
+            list.none { it.type == InteractableType.RECHARGE_STATION } &&
+            rng.nextFloat() < 0.30f
+        ) {
+            list.add(placeSafe(InteractableType.RECHARGE_STATION, ARENA_W * 0.80f, ARENA_H * 0.24f, obstacles, allocId))
         }
         return list
     }
@@ -360,7 +387,11 @@ object InteractablesSystem {
                             }
                         }
                         if (hypot(s.playerX - item.x, s.playerY - item.y) <= reach * 0.78f) {
+                            val beforeH = s.hearts
                             s = damagePlayerFn(s)
+                            if (s.hearts < beforeH && s.labyrinthState != null) {
+                                s = LabyrinthSystem.onTrapTriggered(s)
+                            }
                         }
                         item = item.copy(cooldownTimer = 0.7f)
                     } else if (item.active && item.activeTimer <= 0f) {
@@ -384,6 +415,9 @@ object InteractablesSystem {
                     }
                     if ((pressedByPlayer || pressedByBox) && !item.triggered) {
                         item = item.copy(triggered = true, active = true)
+                        if (pressedByPlayer && s.labyrinthState != null) {
+                            s = LabyrinthSystem.onTrapTriggered(s)
+                        }
                         onDiscovery("interactable", item.type.name)
                         sfx.play(ToySfx.DOOR_OPEN)
                         banner = RunUiBanner("Baldosa Activada", "Una trampa oculta del taller responde al peso.", 0xFFC89948, 2.0f)
@@ -623,6 +657,9 @@ object InteractablesSystem {
             InteractableType.WALL_LEVER -> "Accionar Palanca"
             InteractableType.CHRONO_CLOCK -> "Activar Reloj"
             InteractableType.PRIZE_MACHINE -> "Usar Máquina (2 ●)"
+            InteractableType.NOTICE_BOARD -> "Tablón de Contratos"
+            InteractableType.FLOOR_LAMP -> if (near.active) "Apagar Lámpara" else "Encender Lámpara"
+            InteractableType.RECHARGE_STATION -> "Recargar Luz y Cuerda"
             else -> "Interactuar"
         }
         return near to verb
@@ -730,6 +767,45 @@ object InteractablesSystem {
                     bombs.add(HazardBomb(allocId(), item.x, item.y + 30f, fuseSec = 0.85f, fromPlayer = false, radius = 120f, damage = 24f))
                     banner = RunUiBanner("¡Máquina Averiada!", "Suelta una bomba defectuosa. ¡Aléjate!", 0xFFD13B42, 2.4f)
                 }
+            }
+            InteractableType.NOTICE_BOARD -> {
+                sfx.play(ToySfx.DOOR_OPEN)
+                return s.copy(contractBoardOpen = true)
+            }
+            InteractableType.FLOOR_LAMP -> {
+                sfx.play(ToySfx.DOOR_OPEN)
+                val nextLit = !item.active
+                list[idx] = item.copy(active = nextLit, cooldownTimer = 0.4f)
+                val updatedLamps = if (s.roomLamps.isNotEmpty()) {
+                    val closestIdx = s.roomLamps.indices.minByOrNull { hypot(s.roomLamps[it].x - item.x, s.roomLamps[it].y - item.y) }
+                    s.roomLamps.mapIndexed { i, lp -> if (i == closestIdx) lp.copy(lit = nextLit) else lp }
+                } else {
+                    listOf(RoomLampProp(allocId(), item.x, item.y, lit = nextLit, radius = 240f))
+                }
+                s = s.copy(roomLamps = updatedLamps)
+                banner = RunUiBanner(
+                    if (nextLit) "Lámpara Encendida" else "Lámpara Apagada",
+                    if (nextLit) "Ilumina este sector de la sala." else "La sombra vuelve a cubrir la zona.",
+                    0xFFE5A93B,
+                    2.0f
+                )
+            }
+            InteractableType.RECHARGE_STATION -> {
+                sfx.play(ToySfx.SYNERGY)
+                list[idx] = item.copy(active = true, activeTimer = 2.0f, cooldownTimer = 8.0f)
+                val repairedParts = s.equippedParts.mapValues { (_, ep) ->
+                    if (!ep.isDetached) ep.copy(durability = (ep.durability + 15).coerceAtMost(ep.def.maxDurability)) else ep
+                }
+                s = s.copy(
+                    lightSourceCharge = 100f,
+                    equippedParts = repairedParts
+                )
+                banner = RunUiBanner(
+                    "Estación de Cuerda",
+                    "Batería de luz al 100% y +15 de costura en tus piezas.",
+                    0xFF597354,
+                    2.4f
+                )
             }
             else -> Unit
         }

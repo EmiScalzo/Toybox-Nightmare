@@ -7,6 +7,7 @@ import com.example.data.model.BodyZone
 import com.example.data.model.CompanionId
 import com.example.data.model.ConsumableType
 import com.example.data.model.EnemyType
+import com.example.data.model.PatchEmotion
 import com.example.data.model.RoomMechanic
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -17,6 +18,62 @@ import kotlin.random.Random
 
 object CompanionSystem {
 
+    fun computePairSynergyTitle(companions: List<ActiveCompanion>): String? {
+        if (companions.size < 2) return null
+        val ids = companions.map { it.id }.toSet()
+        return when {
+            CompanionId.BROKEN_SOLDIER in ids && CompanionId.RUSTY_BALLERINA in ids -> "Dúo de Cuerda (+Cadencia y Freno)"
+            CompanionId.BUNNY in ids && CompanionId.CLOCKWORK_CAT in ids -> "Cazatesoros (+Botones Dorados)"
+            CompanionId.PAPER_MOTH in ids && CompanionId.FORGOTTEN_BEAR in ids -> "Luz Guardiana (+Calma Emocional)"
+            CompanionId.WHISPER_PUPPET in ids && CompanionId.FACELESS_DOLL in ids -> "Pacto Silencioso (+Reliquias)"
+            else -> null
+        }
+    }
+
+    fun checkPairIncompatibility(companions: List<ActiveCompanion>, incoming: CompanionId): String? {
+        val ids = companions.map { it.id }.toSet()
+        return when {
+            incoming == CompanionId.PAPER_MOTH && CompanionId.WHISPER_PUPPET in ids ->
+                "Advertencia: El Títere Murmurante inquieta a La Polilla de Papel."
+            incoming == CompanionId.WHISPER_PUPPET && CompanionId.PAPER_MOTH in ids ->
+                "Advertencia: La Polilla de Papel teme los susurros del Títere."
+            incoming == CompanionId.CLOCKWORK_CAT && CompanionId.BUNNY in ids ->
+                "Aviso: El Gato vigila los botones que recoge El Conejito."
+            else -> null
+        }
+    }
+
+    fun grantCompanionXp(state: GameRunState, amount: Int = 1): GameRunState {
+        if (state.activeCompanions.isEmpty()) return state
+        var banner = state.activeBanner
+        val updated = state.activeCompanions.map { c ->
+            if (c.broken) return@map c
+            val nextXp = c.xp + amount
+            if (!c.evolved && nextXp >= 8) {
+                val title = when (c.id) {
+                    CompanionId.BROKEN_SOLDIER -> "Capitán de Plomo"
+                    CompanionId.BUNNY -> "Conejo Explorador"
+                    CompanionId.CLOCKWORK_CAT -> "Gato Relojero"
+                    CompanionId.PAPER_MOTH -> "Polilla Luminosa"
+                    CompanionId.RUSTY_BALLERINA -> "Bailarina Eterna"
+                    CompanionId.WHISPER_PUPPET -> "Oráculo de Hilo"
+                    CompanionId.FACELESS_DOLL -> "Dama de Porcelana"
+                    CompanionId.FORGOTTEN_BEAR -> "Guardián Dorado"
+                }
+                banner = RunUiBanner(
+                    "¡Evolución de Compañero!",
+                    "${c.id.displayName} evolucionó a $title (+Poder).",
+                    0xFFE5A93B,
+                    3.0f
+                )
+                c.copy(xp = nextXp, evolved = true, evolvedTitle = title, maxHp = c.maxHp + 2, hp = c.maxHp + 2)
+            } else {
+                c.copy(xp = nextXp)
+            }
+        }
+        return state.copy(activeCompanions = updated, activeBanner = banner)
+    }
+
     fun buildShrineDialog(
         id: CompanionId,
         activeCompanions: List<ActiveCompanion>
@@ -25,11 +82,12 @@ object CompanionSystem {
             val replaced = activeCompanions.first().id
             " Ya llevas 2 acompañantes: aceptar sustituirá a ${replaced.displayName}."
         } else ""
+        val incompatWarning = checkPairIncompatibility(activeCompanions, id)?.let { "\n\n$it" } ?: ""
         return PendingCompanionDialog(
             companionId = id,
             title = id.displayName,
             subtitle = "${id.rarity.displayName} • Compañero con condición",
-            narrative = "${id.interestDesc}\n\nCondición: ${id.conditionDesc}$fullWarning",
+            narrative = "${id.interestDesc}\n\nCondición: ${id.conditionDesc}$fullWarning$incompatWarning",
             options = listOf(
                 CompanionChoiceOption(
                     id = "recruit_accept",
@@ -228,12 +286,14 @@ object CompanionSystem {
                         maxHp = if (dlg.companionId == CompanionId.BROKEN_SOLDIER) 4 else 3
                     )
                 )
+                val synTitle = computePairSynergyTitle(list)
                 return s.copy(
                     activeCompanions = list,
+                    activeCompanionSynergyTitle = synTitle,
                     activeBanner = RunUiBanner(
-                        "Nuevo Compañero: ${dlg.companionId.displayName}",
+                        if (synTitle != null) "Sinergia de Compañeros: $synTitle" else "Nuevo Compañero: ${dlg.companionId.displayName}",
                         dlg.companionId.interestDesc,
-                        0xFF597354,
+                        if (synTitle != null) 0xFFE5A93B else 0xFF597354,
                         3.0f
                     )
                 )
@@ -259,8 +319,9 @@ object CompanionSystem {
                     onGrudge(CompanionId.BUNNY.name)
                 }
                 val rem = s.activeCompanions.filterNot { it.id == dlg.companionId }
-                return s.copy(
+                val afterDrop = s.copy(
                     activeCompanions = rem,
+                    activeCompanionSynergyTitle = computePairSynergyTitle(rem),
                     activeBanner = RunUiBanner(
                         if (dlg.companionId == CompanionId.BUNNY) "Conejito Abandonado" else "${dlg.companionId.displayName} se marchó",
                         if (dlg.companionId == CompanionId.BUNNY) "La tienda recuerda tu traición para otra partida." else "Ya no te sigue.",
@@ -268,6 +329,7 @@ object CompanionSystem {
                         2.8f
                     )
                 )
+                return EmotionSystem.triggerEmotion(afterDrop, PatchEmotion.SADNESS, 26f, 22f, "Despedirse de un compañero entristece a Patch.")
             }
 
             "pet_bunny" -> {
@@ -651,20 +713,27 @@ object CompanionSystem {
             when (c.id) {
                 CompanionId.BROKEN_SOLDIER -> {
                     if (!c.broken) {
+                        val hasDuoSynergy = s.activeCompanionSynergyTitle?.startsWith("Dúo de Cuerda") == true
+                        val fireCd = when {
+                            c.evolved && hasDuoSynergy -> 0.72f
+                            c.evolved || hasDuoSynergy -> 0.92f
+                            else -> 1.25f
+                        }
+                        val shotDmg = if (c.evolved) 8.5f else 5.5f
                         if (c.actionTimer <= 0f && updatedEnemies.isNotEmpty()) {
                             val nearest = updatedEnemies.minByOrNull { hypot(it.x - c.x, it.y - c.y) }
-                            if (nearest != null && hypot(nearest.x - c.x, nearest.y - c.y) < 520f) {
+                            if (nearest != null && hypot(nearest.x - c.x, nearest.y - c.y) < 540f) {
                                 val ang = atan2(nearest.y - c.y, nearest.x - c.x)
                                 newProjs.add(
                                     ActiveProjectile(
                                         id = allocId(),
                                         x = c.x, y = c.y,
                                         vx = cos(ang) * 460f, vy = sin(ang) * 460f,
-                                        radius = 7f, damage = 5.5f,
+                                        radius = if (c.evolved) 8.5f else 7f, damage = shotDmg,
                                         fromPlayer = true, colorHex = 0xFFE5A93B
                                     )
                                 )
-                                c = c.copy(actionTimer = 1.25f)
+                                c = c.copy(actionTimer = fireCd)
                             }
                         }
                         // Check incoming enemy projectiles damaging the soldier!
@@ -688,12 +757,13 @@ object CompanionSystem {
                 }
                 CompanionId.WHISPER_PUPPET -> {
                     if (c.actionTimer <= 0f && updatedEnemies.isNotEmpty()) {
+                        val pullRange = if (c.evolved) 290f else 240f
                         updatedEnemies = updatedEnemies.map { e ->
                             val d = hypot(e.x - c.x, e.y - c.y)
-                            if (!e.type.isBoss && d < 240f && d > 12f) {
+                            if (!e.type.isBoss && d < pullRange && d > 12f) {
                                 val pullX = (c.x - e.x) / d * 28f
                                 val pullY = (c.y - e.y) / d * 28f
-                                e.copy(x = e.x + pullX, y = e.y + pullY, hp = e.hp - 1.5f)
+                                e.copy(x = e.x + pullX, y = e.y + pullY, hp = e.hp - (if (c.evolved) 2.5f else 1.5f))
                             } else e
                         }
                         c = c.copy(actionTimer = 2.6f)
@@ -701,9 +771,10 @@ object CompanionSystem {
                 }
                 CompanionId.RUSTY_BALLERINA -> {
                     if (!c.broken) {
+                        val slowRadius = if (c.evolved) 220f else 170f
                         updatedProjs = updatedProjs.map { p ->
-                            if (!p.fromPlayer && hypot(p.x - c.x, p.y - c.y) < 170f) {
-                                p.copy(vx = p.vx * (1f - 0.55f * dt), vy = p.vy * (1f - 0.55f * dt))
+                            if (!p.fromPlayer && hypot(p.x - c.x, p.y - c.y) < slowRadius) {
+                                p.copy(vx = p.vx * (1f - 0.62f * dt), vy = p.vy * (1f - 0.62f * dt))
                             } else p
                         }
                     }
@@ -718,8 +789,9 @@ object CompanionSystem {
             s.pickups.filterNot { it.id in collectedPickups }
         } else s.pickups
 
-        return s.copy(
+        var nextState = s.copy(
             activeCompanions = updated,
+            activeCompanionSynergyTitle = computePairSynergyTitle(updated),
             pickups = finalPickups,
             buttons = s.buttons + addedButtons,
             goldenButtons = s.goldenButtons + addedGolden,
@@ -727,13 +799,19 @@ object CompanionSystem {
             projectiles = updatedProjs + newProjs,
             activeBanner = banner
         )
+        if (updated.any { it.broken } && state.activeCompanions.none { it.broken }) {
+            nextState = EmotionSystem.triggerEmotion(nextState, PatchEmotion.SADNESS, 28f, 22f, "Ver a tu compañero averiado entristece a Patch.")
+        }
+        return nextState
     }
 
     fun onExplosionNearCompanions(state: GameRunState, bx: Float, by: Float): GameRunState {
         val moth = state.activeCompanions.find { it.id == CompanionId.PAPER_MOTH } ?: return state
         if (hypot(moth.x - bx, moth.y - by) <= 280f) {
-            return state.copy(
-                activeCompanions = state.activeCompanions.filterNot { it.id == CompanionId.PAPER_MOTH },
+            val rem = state.activeCompanions.filterNot { it.id == CompanionId.PAPER_MOTH }
+            val next = state.copy(
+                activeCompanions = rem,
+                activeCompanionSynergyTitle = computePairSynergyTitle(rem),
                 activeBanner = RunUiBanner(
                     "¡La Polilla de Papel huyó!",
                     "El estallido de pólvora la aterrorizó y escapó de la sala.",
@@ -741,6 +819,7 @@ object CompanionSystem {
                     3.0f
                 )
             )
+            return EmotionSystem.triggerEmotion(next, PatchEmotion.SADNESS, 26f, 20f, "La pérdida de un compañero golpea a Patch.")
         }
         return state
     }
@@ -752,11 +831,13 @@ object CompanionSystem {
             val a = (i / 14f) * (2f * PI.toFloat())
             ParticleFx(bear.x, bear.y, cos(a) * 140f, sin(a) * 140f, 5f, 0xFFC89948, 0.55f, 0.55f)
         }
-        return true to state.copy(
+        val rem = state.activeCompanions.filterNot { it.id == CompanionId.FORGOTTEN_BEAR }
+        val saved = state.copy(
             hearts = 1,
             invulnTimer = 2.0f,
             screenShake = 16f,
-            activeCompanions = state.activeCompanions.filterNot { it.id == CompanionId.FORGOTTEN_BEAR },
+            activeCompanions = rem,
+            activeCompanionSynergyTitle = computePairSynergyTitle(rem),
             particles = state.particles + ring,
             activeBanner = RunUiBanner(
                 "El Osito Olvidado te salvó",
@@ -765,5 +846,6 @@ object CompanionSystem {
                 3.8f
             )
         )
+        return true to EmotionSystem.triggerEmotion(saved, PatchEmotion.SADNESS, 40f, 28f, "El sacrificio del Osito llena de tristeza a Patch.")
     }
 }

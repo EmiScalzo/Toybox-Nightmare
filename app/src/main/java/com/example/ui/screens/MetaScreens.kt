@@ -57,6 +57,15 @@ fun ChallengesScreen(
                 .padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            com.example.ui.components.ToyboxVisualBanner(
+                drawableRes = com.example.R.drawable.img_menu_challenges_box,
+                badge = "La Caja Sellada",
+                caption = "Desafíos de fábrica, medallas y registros de incursiones",
+                contentDescription = "Caja cerrada de desafíos con candados de latón",
+                borderColor = CrimsonBright,
+                heightDp = 104
+            )
+
             ToyboxFrameCard(modifier = Modifier.fillMaxWidth(), borderColor = TarnishedBrass) {
                 Text("ESTADÍSTICAS PERMANENTES", style = MaterialTheme.typography.titleLarge, color = TarnishedBrass)
                 StitchedDivider(Modifier.padding(vertical = 6.dp))
@@ -148,6 +157,14 @@ fun OptionsScreen(
                 .padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            com.example.ui.components.ToyboxVisualBanner(
+                drawableRes = com.example.R.drawable.img_menu_workshop_radio,
+                badge = "Radio del Taller",
+                caption = "Ajusta la música dinámica, acústica y penumbra de la tienda",
+                contentDescription = "Radio antigua y máquina de coser del taller",
+                heightDp = 100
+            )
+
             ToyboxFrameCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -249,6 +266,14 @@ fun CreditsScreen(onBack: () -> Unit) {
                 .padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            com.example.ui.components.ToyboxVisualBanner(
+                drawableRes = com.example.R.drawable.img_lore_workshop,
+                badge = "Archivo Histórico • Est. 1954",
+                caption = "Los talleres originales donde El Fabricante dio cuerda al primer muñeco",
+                contentDescription = "Taller histórico de Wonderland Toys",
+                heightDp = 104
+            )
+
             ToyboxFrameCard(modifier = Modifier.fillMaxWidth(), borderColor = TarnishedBrass) {
                 Text("WONDERLAND TOYS — FUNDADA EN 1954", style = MaterialTheme.typography.titleLarge, color = TarnishedBrass)
                 Spacer(Modifier.height(8.dp))

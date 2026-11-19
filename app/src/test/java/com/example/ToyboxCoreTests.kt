@@ -11,26 +11,36 @@ import com.example.data.model.BackpackTier
 import com.example.data.model.BodyZone
 import com.example.data.model.CharacterId
 import com.example.data.model.CompanionId
+import com.example.data.model.ContractRestriction
+import com.example.data.model.DamageElement
 import com.example.data.model.Difficulty
+import com.example.data.model.Direction
+import com.example.data.model.EmergentRoomScenario
+import com.example.data.model.EmotionFusion
+import com.example.data.model.EnemyAlertState
 import com.example.data.model.EnemyFaction
+import com.example.data.model.EnemyMaterialType
 import com.example.data.model.EnemyRole
 import com.example.data.model.EnemyType
 import com.example.data.model.EquippedBodyPart
 import com.example.data.model.InteractableCategory
 import com.example.data.model.InteractableType
+import com.example.data.model.LabyrinthType
+import com.example.data.model.LightSourceType
 import com.example.data.model.LorePropKind
 import com.example.data.model.LorePuzzleKind
 import com.example.data.model.ManufacturerDealCategory
 import com.example.data.model.ManufacturerOffer
 import com.example.data.model.ObjectiveType
+import com.example.data.model.PatchEmotion
 import com.example.data.model.RepairActionMode
 import com.example.data.model.RepairMaterial
 import com.example.data.model.RepairMinigameType
+import com.example.data.model.RoomLightingMode
 import com.example.data.model.RoomMechanic
 import com.example.data.model.RoomType
 import com.example.data.model.SecretClueType
 import com.example.data.model.SecretRoomFlavor
-import com.example.data.model.Direction
 import com.example.engine.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -56,8 +66,10 @@ class ToyboxCoreTests {
 
     @Test
     fun dungeonFloorIsFullyConnectedAndContainsBoss() {
-        for (floorNum in 1..6) {
+        assertEquals(8, GameCatalog.floors.size)
+        for (floorNum in 1..8) {
             val floor = DungeonGenerator.generateFloor(floorNum, Difficulty.NORMAL, rng = Random(floorNum * 17))
+            assertNotNull("Floor $floorNum must have visualProfile", GameCatalog.floors.first { it.floorNumber == floorNum }.visualProfile)
             assertTrue(floor.rooms.size >= 11)
             assertEquals(RoomType.START, floor.rooms[floor.startCoord]?.type)
             assertEquals(RoomType.BOSS, floor.rooms[floor.bossCoord]?.type)
@@ -777,5 +789,164 @@ class ToyboxCoreTests {
             treasurePickups.map { it.id to it.kind },
             s.pickups.map { it.id to it.kind }
         )
+    }
+
+    @Test
+    fun masterExpansionLightingVeiledSpecterAlertStatesAndMaterialMatrix() {
+        val sfx = SoundEffectsEngine().apply { enabled = false }
+        val engine = GameEngine(sfx = sfx, onDiscovery = { _, _ -> }, onAchievement = { })
+        val base = engine.createNewRun(GameCatalog.characterById(CharacterId.PATCH), Difficulty.NORMAL, emptyList())
+
+        // 1) Material damage matrix
+        val porcelainExplosive = EnemyRelationshipSystem.computeElementalDamage(20f, DamageElement.EXPLOSIVE, EnemyMaterialType.PORCELAIN)
+        val porcelainLight = EnemyRelationshipSystem.computeElementalDamage(20f, DamageElement.PHYSICAL_LIGHT, EnemyMaterialType.PORCELAIN)
+        assertTrue(porcelainExplosive > porcelainLight)
+        val mechElectric = EnemyRelationshipSystem.computeElementalDamage(20f, DamageElement.ELECTRIC, EnemyMaterialType.MECHANISM)
+        val rubberElectric = EnemyRelationshipSystem.computeElementalDamage(20f, DamageElement.ELECTRIC, EnemyMaterialType.RUBBER)
+        assertTrue(mechElectric > rubberElectric)
+
+        // 2) Veiled Specter invulnerable under player light & vulnerable when light is turned OFF
+        val darkRoom = base.currentRoom.copy(lightingMode = RoomLightingMode.DARK)
+        val specter = ActiveEnemy(
+            id = 500L,
+            type = EnemyType.VEILED_SPECTER,
+            x = base.playerX + 60f,
+            y = base.playerY,
+            hp = 76f,
+            maxHp = 76f,
+            radius = 22f
+        )
+        val litState = base.copy(
+            currentRoom = darkRoom,
+            roomLamps = emptyList(),
+            lightSource = LightSourceType.CANDLE,
+            lightOn = true,
+            lightSourceCharge = 100f,
+            enemies = listOf(specter)
+        )
+        assertFalse("Specter must be invulnerable inside player light", LightingSystem.isVeiledSpecterVulnerable(litState, specter))
+        val darkOffState = LightingSystem.toggleLight(litState)
+        assertFalse(darkOffState.lightOn)
+        assertTrue("Specter must become vulnerable when player light is OFF", LightingSystem.isVeiledSpecterVulnerable(darkOffState, specter))
+
+        // 3) Sleeping Den scenario starts non-first enemies as CALM/sleeping and wakes them when player approaches
+        val sleepingPair = listOf(
+            ActiveEnemy(id = 1L, type = EnemyType.TIN_SOLDIER, x = 200f, y = 200f, hp = 34f, maxHp = 34f, radius = 20f),
+            ActiveEnemy(id = 2L, type = EnemyType.PLUSH_BEAR, x = 520f, y = 500f, hp = 92f, maxHp = 92f, radius = 22f)
+        )
+        val (inited, _) = EnemyRelationshipSystem.initializeRoomRelationships(
+            enemies = sleepingPair,
+            hasBell = false,
+            defeatedCaptainsCount = 0,
+            scenario = EmergentRoomScenario.SLEEPING_DEN
+        )
+        assertTrue(inited[1].isSleeping)
+        assertEquals(EnemyAlertState.CALM, inited[1].alertState)
+        var awakeCheck = base.copy(playerX = 500f, playerY = 500f, enemies = inited)
+        awakeCheck = EnemyRelationshipSystem.stepRelationships(awakeCheck, 0.1f) { 999L }
+        assertFalse(awakeCheck.enemies[1].isSleeping)
+        assertEquals(EnemyAlertState.COMBAT, awakeCheck.enemies[1].alertState)
+    }
+
+    @Test
+    fun masterExpansionEmotionsContractsBossesLabyrinthsAndCompanionEvolution() {
+        val sfx = SoundEffectsEngine().apply { enabled = false }
+        val engine = GameEngine(sfx = sfx, onDiscovery = { _, _ -> }, onAchievement = { })
+        val base = engine.createNewRun(GameCatalog.characterById(CharacterId.PATCH), Difficulty.NORMAL, emptyList())
+        var nid = 12000L
+
+        // 1) Patch Emotion Fusion: ANGER + SADNESS -> VENGEANCE
+        var emState = EmotionSystem.triggerEmotion(base, PatchEmotion.ANGER, 45f, 30f)
+        assertEquals(PatchEmotion.ANGER, emState.emotionState.primary)
+        assertEquals(2, emState.emotionState.level)
+        emState = EmotionSystem.triggerEmotion(emState, PatchEmotion.SADNESS, 35f, 30f)
+        assertEquals(EmotionFusion.VENGEANCE, emState.emotionState.fusion)
+        val emMods = EmotionSystem.computeModifiers(emState.emotionState)
+        assertTrue(emMods.bleedOnHit)
+        assertTrue(emMods.damageMult > 1.2f)
+
+        // 2) Contracts: accept Hunter, reject incompatible Protector, complete on kills & test restriction failure
+        val board = ContractSystem.generateBoardContracts(2, Random(42))
+        assertEquals(3, board.size)
+        val hunterDef = com.example.data.model.ContractDef(
+            id = "c_hunter",
+            type = com.example.data.model.ContractType.HUNTER,
+            title = "Cazador",
+            description = "Derrota 2",
+            targetCount = 2,
+            restriction = ContractRestriction.NO_BOMBS_3_ROOMS,
+            incompatibleIds = listOf("c_protector"),
+            rewardButtons = 5,
+            rewardDesc = "+5"
+        )
+        val protDef = com.example.data.model.ContractDef(
+            id = "c_protector",
+            type = com.example.data.model.ContractType.PROTECTOR,
+            title = "Protector",
+            description = "Protege",
+            targetCount = 2,
+            incompatibleIds = listOf("c_hunter"),
+            rewardButtons = 5,
+            rewardDesc = "+5"
+        )
+        var cState = ContractSystem.acceptContract(base, hunterDef)
+        assertEquals(1, cState.activeContracts.size)
+        val rejectedProt = ContractSystem.acceptContract(cState, protDef)
+        assertEquals(1, rejectedProt.activeContracts.size)
+        val failedBomb = ContractSystem.onBombUsed(cState)
+        assertTrue(failedBomb.activeContracts.first().failed)
+
+        val dummyEnemy = ActiveEnemy(id = 10L, type = EnemyType.TIN_SOLDIER, x = 200f, y = 200f, hp = 34f, maxHp = 34f, radius = 20f)
+        cState = ContractSystem.onEnemyKilled(cState, dummyEnemy)
+        cState = ContractSystem.onEnemyKilled(cState, dummyEnemy)
+        assertTrue(cState.activeContracts.first().completed)
+        assertEquals(1, cState.completedContractsCount)
+
+        // 3) Boss 3-Phase & Puppet Strings immunity
+        val puppetBoss = ActiveEnemy(id = 200L, type = EnemyType.BOSS_TITIRITERO, x = 500f, y = 300f, hp = 680f, maxHp = 680f, radius = 38f)
+        val (initedBoss, anchors) = BossMechanicSystem.initBossArena(puppetBoss) { nid++ }
+        assertEquals(3, anchors.size)
+        assertTrue(initedBoss.bossArmorActive)
+        val (dmgWhileAnchored, _, blocked) = BossMechanicSystem.computeIncomingDamage(
+            base.copy(enemies = listOf(initedBoss), bossArenaProps = anchors),
+            initedBoss,
+            25f,
+            DamageElement.PHYSICAL_LIGHT
+        )
+        assertTrue(blocked)
+        assertEquals(0f, dmgWhileAnchored, 0.001f)
+
+        val phaseThreeBoss = initedBoss.copy(hp = 150f)
+        val steppedBoss = BossMechanicSystem.stepBossMechanics(
+            base.copy(enemies = listOf(phaseThreeBoss), bossArenaProps = anchors),
+            0.05f
+        ) { nid++ }
+        assertEquals(3, steppedBoss.enemies.first().bossCurrentPhase)
+
+        // 4) Labyrinth Exploración Perfecta
+        val labRoom = base.currentRoom.copy(type = RoomType.LABYRINTH, labyrinthType = LabyrinthType.FACTORY_MAZE)
+        var labState = LabyrinthSystem.initLabyrinthRoom(base.copy(currentRoom = labRoom, enemies = emptyList()), labRoom) { nid++ }
+        repeat(3) { labState = LabyrinthSystem.onLostToyCollected(labState) }
+        val clearedChestsAndLever = labState.roomInteractables.map {
+            when (it.type) {
+                InteractableType.LOOT_CRATE -> it.copy(destroyed = true, hp = 0f)
+                InteractableType.WALL_LEVER -> it.copy(active = true)
+                else -> it
+            }
+        }
+        val perfectLab = LabyrinthSystem.stepLabyrinth(labState.copy(roomInteractables = clearedChestsAndLever), 0.05f) { nid++ }
+        assertTrue(perfectLab.labyrinthState?.isPerfectExploration == true)
+        assertTrue(perfectLab.labyrinthState?.perfectRewardClaimed == true)
+
+        // 5) Companion Pair Synergy & XP Evolution
+        val duoState = base.copy(
+            activeCompanions = listOf(
+                ActiveCompanion(CompanionId.BROKEN_SOLDIER, 200f, 200f),
+                ActiveCompanion(CompanionId.RUSTY_BALLERINA, 240f, 200f)
+            )
+        )
+        assertEquals("Dúo de Cuerda (+Cadencia y Freno)", CompanionSystem.computePairSynergyTitle(duoState.activeCompanions))
+        val evolved = CompanionSystem.grantCompanionXp(duoState, 8)
+        assertTrue(evolved.activeCompanions.all { it.evolved && it.evolvedTitle != null })
     }
 }

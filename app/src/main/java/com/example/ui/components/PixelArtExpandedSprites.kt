@@ -507,6 +507,10 @@ object PixelArtExpandedSprites {
             ".KCCCCCCCCCCK.",
             "..KKKKKKKKKK.."
         ))
+
+        InteractableType.NOTICE_BOARD,
+        InteractableType.FLOOR_LAMP,
+        InteractableType.RECHARGE_STATION -> PixelArtMasterSprites.forMasterInteractable(type, active)
     }
 
     fun forSecretClue(type: SecretClueType): ImageBitmap = when (type) {

@@ -187,6 +187,7 @@ fun MainMenuScreen(
                 icon = Icons.Default.DoorFront,
                 accentColor = CrimsonBright,
                 isPrimary = true,
+                previewDrawable = R.drawable.img_menu_play_door_sprite,
                 testTag = "menu_play_button",
                 onClick = { onNavigate(AppRoute.RUN_SETUP) }
             )
@@ -203,6 +204,7 @@ fun MainMenuScreen(
                     objectLabel = "Estantería de Muñecos",
                     icon = Icons.Default.Face,
                     accent = TarnishedBrass,
+                    previewDrawable = R.drawable.img_menu_sprites_showcase,
                     testTag = "menu_characters_button",
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigate(AppRoute.RUN_SETUP) }
@@ -212,6 +214,7 @@ fun MainMenuScreen(
                     objectLabel = "Vitrina Ilustrada",
                     icon = Icons.Default.Inventory2,
                     accent = MutedMoss,
+                    previewDrawable = R.drawable.img_menu_collection_vitrine,
                     testTag = "menu_collection_button",
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigate(AppRoute.COLLECTION_ALBUM) }
@@ -229,6 +232,7 @@ fun MainMenuScreen(
                     objectLabel = "Libro Antiguo",
                     icon = Icons.AutoMirrored.Filled.MenuBook,
                     accent = TarnishedBrass,
+                    previewDrawable = R.drawable.img_achievement_book,
                     testTag = "menu_achievements_button",
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigate(AppRoute.ACHIEVEMENT_BOOK) }
@@ -238,6 +242,7 @@ fun MainMenuScreen(
                     objectLabel = "Caja Cerrada",
                     icon = Icons.Default.Lock,
                     accent = CrimsonBright,
+                    previewDrawable = R.drawable.img_menu_challenges_box,
                     testTag = "menu_challenges_button",
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigate(AppRoute.CHALLENGES) }
@@ -255,6 +260,7 @@ fun MainMenuScreen(
                     objectLabel = "Radio Antigua",
                     icon = Icons.Default.Radio,
                     accent = SlateBlue,
+                    previewDrawable = R.drawable.img_menu_workshop_radio,
                     testTag = "menu_options_button",
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigate(AppRoute.OPTIONS) }
@@ -264,6 +270,7 @@ fun MainMenuScreen(
                     objectLabel = "Guía de Costura",
                     icon = Icons.AutoMirrored.Filled.HelpOutline,
                     accent = MutedMoss,
+                    previewDrawable = R.drawable.img_lore_workshop,
                     testTag = "menu_tutorial_button",
                     modifier = Modifier.weight(1f),
                     onClick = onOpenTutorial
@@ -282,6 +289,7 @@ fun MainMenuScreen(
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 accentColor = TarnishedBrass,
                 isPrimary = false,
+                previewDrawable = R.drawable.img_lore_manufacturer,
                 testTag = "menu_lore_button",
                 onClick = onOpenLore
             )
@@ -295,6 +303,7 @@ fun MainMenuScreen(
                 icon = Icons.Default.CollectionsBookmark,
                 accentColor = MutedMoss,
                 isPrimary = false,
+                previewDrawable = R.drawable.img_archive_forbidden_blueprint,
                 testTag = "menu_archive_button",
                 onClick = { onNavigate(AppRoute.WONDERLAND_ARCHIVE) }
             )
@@ -308,6 +317,7 @@ fun MainMenuScreen(
                 icon = Icons.Default.Badge,
                 accentColor = ParchmentDark,
                 isPrimary = false,
+                previewDrawable = R.drawable.img_menu_workshop_radio,
                 testTag = "menu_credits_button",
                 onClick = { onNavigate(AppRoute.CREDITS) }
             )
@@ -337,59 +347,89 @@ private fun DiegeticMenuObject(
     icon: ImageVector,
     accentColor: Color,
     isPrimary: Boolean,
+    previewDrawable: Int? = null,
     testTag: String,
     onClick: () -> Unit
 ) {
     val shape = CutCornerShape(6.dp)
     val bg = if (isPrimary) {
-        Brush.horizontalGradient(listOf(CrimsonBlood.copy(alpha = 0.92f), AgedWoodDark))
+        Brush.horizontalGradient(listOf(CrimsonBlood.copy(alpha = 0.90f), AgedWoodDark.copy(alpha = 0.85f)))
     } else {
-        Brush.horizontalGradient(listOf(AgedWoodMid.copy(alpha = 0.88f), AgedWoodDark.copy(alpha = 0.94f)))
+        Brush.horizontalGradient(listOf(AgedWoodMid.copy(alpha = 0.88f), AgedWoodDark.copy(alpha = 0.92f)))
     }
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 64.dp)
+            .defaultMinSize(minHeight = if (isPrimary) 82.dp else 68.dp)
             .clip(shape)
-            .background(bg)
             .border(1.5.dp, if (isPrimary) TarnishedBrass else TarnishedBrassDim, shape)
             .testTag(testTag)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
+        if (previewDrawable != null) {
+            Image(
+                painter = painterResource(id = previewDrawable),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .matchParentSize()
+                    .alpha(if (isPrimary) 0.42f else 0.25f)
+            )
+        }
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .background(CharcoalBlack.copy(alpha = 0.55f), CutCornerShape(4.dp))
-                .border(1.dp, accentColor, CutCornerShape(4.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = title, tint = accentColor, modifier = Modifier.size(24.dp))
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = objectLabel.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = TarnishedBrass
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                color = AgedIvory
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Parchment
-            )
-        }
-        Icon(
-            imageVector = Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = TarnishedBrass
+                .matchParentSize()
+                .background(bg)
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(if (isPrimary) 56.dp else 48.dp)
+                    .clip(CutCornerShape(5.dp))
+                    .background(CharcoalBlack.copy(alpha = 0.72f))
+                    .border(1.2.dp, accentColor, CutCornerShape(5.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (previewDrawable != null) {
+                    Image(
+                        painter = painterResource(id = previewDrawable),
+                        contentDescription = title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().alpha(0.92f)
+                    )
+                } else {
+                    Icon(icon, contentDescription = title, tint = accentColor, modifier = Modifier.size(24.dp))
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = objectLabel.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TarnishedBrass
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = AgedIvory
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Parchment
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = TarnishedBrass
+            )
+        }
     }
 }
 
@@ -399,41 +439,75 @@ private fun DiegeticMenuTile(
     objectLabel: String,
     icon: ImageVector,
     accent: Color,
+    previewDrawable: Int? = null,
     testTag: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val shape = CutCornerShape(6.dp)
-    Column(
+    Box(
         modifier = modifier
-            .defaultMinSize(minHeight = 86.dp)
+            .defaultMinSize(minHeight = 112.dp)
             .clip(shape)
-            .background(
-                Brush.verticalGradient(listOf(AgedWoodMid.copy(alpha = 0.9f), AgedWoodDark.copy(alpha = 0.95f)))
-            )
+            .background(AgedWoodDark)
             .border(1.2.dp, TarnishedBrassDim, shape)
             .testTag(testTag)
             .clickable(onClick = onClick)
-            .padding(12.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, contentDescription = title, tint = accent, modifier = Modifier.size(24.dp))
-            Text(
-                text = objectLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = ParchmentDark,
-                textAlign = TextAlign.End
+        if (previewDrawable != null) {
+            Image(
+                painter = painterResource(id = previewDrawable),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .matchParentSize()
+                    .alpha(0.45f)
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = AgedIvory
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            CharcoalBlack.copy(alpha = 0.25f),
+                            CharcoalBlack.copy(alpha = 0.88f)
+                        )
+                    )
+                )
         )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(CharcoalBlack.copy(alpha = 0.65f), CutCornerShape(4.dp))
+                        .border(1.dp, accent.copy(alpha = 0.8f), CutCornerShape(4.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, contentDescription = title, tint = accent, modifier = Modifier.size(16.dp))
+                }
+                Text(
+                    text = objectLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Parchment,
+                    textAlign = TextAlign.End
+                )
+            }
+            Spacer(Modifier.height(22.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = AgedIvory
+            )
+        }
     }
 }

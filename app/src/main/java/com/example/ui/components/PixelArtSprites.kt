@@ -343,6 +343,9 @@ object PixelArtSprites {
             EnemyType.BODYGUARD_BEAR -> PixelArtExpandedSprites.bodyguardBear()
             EnemyType.CLOCKWORK_COURIER -> PixelArtExpandedSprites.clockworkCourier()
             EnemyType.STITCH_MECHANIC -> PixelArtExpandedSprites.stitchMechanic()
+            EnemyType.VEILED_SPECTER -> PixelArtMasterSprites.veiledSpecter(vulnerable = disguised)
+            EnemyType.LAMP_SNUFFER -> PixelArtMasterSprites.lampSnuffer()
+            EnemyType.CLOCKWORK_SENTINEL -> PixelArtMasterSprites.clockworkSentinel()
 
             EnemyType.BOSS_VENDEDOR -> sprite("boss_vendedor", listOf(
                 "......KKKKKKKK......",
@@ -489,6 +492,8 @@ object PixelArtSprites {
                 "...KKKK......KKKK..."
             ))
 
+            EnemyType.BOSS_SUBSUELO -> PixelArtMasterSprites.bossSubsuelo()
+
             EnemyType.BOSS_MADRE -> sprite("boss_madre", listOf(
                 "....KK..KKKK..KK....",
                 "...KGGKKGGGGKKGGK...",
@@ -504,98 +509,168 @@ object PixelArtSprites {
                 "..KrrrrrKKKKrrrrrK..",
                 "..KKKKK......KKKKK.."
             ))
+
+            EnemyType.BOSS_FABRICANTE -> PixelArtMasterSprites.bossFabricante()
         }
     }
 
     fun forCharacter(id: CharacterId): ImageBitmap {
         return when (id) {
-            CharacterId.PATCH -> sprite("char_patch", listOf(
-                "....KKKKKKKK....",
-                "...KTTTTTTTTK...",
-                "..KTTKKTTTGTTK..",
-                "..KTTKKTTTGGTK..",
-                "..KTTTTTTTTTTK..",
-                "...KTKKKKKKTK...",
-                "..KKTTKGGKTTKK..",
-                ".KTTKTTGGTTKTTK.",
-                ".KTTKTTTTTTKTTK.",
-                ".KTT.KTTTTK..KK.",
-                ".KK..KTKKTK.....",
-                ".....KTKKTK.....",
-                "....KbK..KbK....",
-                "....KKK..KKK...."
+            CharacterId.PATCH -> sprite("char_patch_v2", listOf(
+                "........KKKKKKKK........",
+                "......KKTTTTTTTTKK......",
+                ".....KTTTTTTTTTTTTK.....",
+                "....KTTTKKTTTTTTGGTK....",
+                "....KTKKKKTTTTTGGGGK....",
+                "...KTTKKKKTTTTTGYGGTK...",
+                "...KTTKKKKTTTTTTGggTK...",
+                "...KTTTTTTTTTTTTTTTTK...",
+                "...KTbTTTTKKKKKKTTbTK...",
+                "....KTbTTKTTTTTTKbTK....",
+                ".....KKKKTTKGGKTKKKK....",
+                "....KTTbKTKGGGGKTbTTK...",
+                "...KTTTbKTKGGGGKTbTTTK..",
+                "..KTTTbKKTTKGGKTTKKbTTK.",
+                "..KTTbK.KTTWWWWTTK.KbTK.",
+                "..KTTK..KTTWWWWTTK..KTK.",
+                "...KK...KTTTWWTTTK...KK.",
+                "........KTTTTTTTTK......",
+                "........KTTKKKKTTK......",
+                "........KTTK..KTTK......",
+                "........KTbK..KbTK......",
+                ".......KbbKK..KKbbK.....",
+                ".......KKKK....KKKK.....",
+                "........................"
             ))
-            CharacterId.TINNY -> sprite("char_tinny", listOf(
-                ".......KK.......",
-                "......KEEK......",
-                ".......KK.......",
-                "...KKKKKKKKKK...",
-                "..KCCCCCCCCCCK..",
-                "..KCCYCCCCYCCK..",
-                "..KCCcKKKKcCCK..",
-                "..KKKKKKKKKKKK..",
-                ".KCCKCCGGCCKCCK.",
-                ".KCCKCCCCCCKCCK.",
-                "..KK.KCCCCK.KK..",
-                ".....KCKKCK.....",
-                "....KccKKccK....",
-                "....KKKKKKKK...."
+            CharacterId.TINNY -> sprite("char_tinny_v2", listOf(
+                "...........KK...........",
+                "..........KEEK..........",
+                "..........KEEK..........",
+                "...........KK...........",
+                "......KKKKKKKKKKKK......",
+                ".....KCCCCCCCCCCCCK.....",
+                "....KCWWCCCCCCCCCCcK....",
+                "....KCcKKKKKKKKKKcCK....",
+                "....KCcKCCYKKYCCKcCK....",
+                "....KCcKCCYKKYCCKcCK....",
+                "....KCCcKKKKKKKKcCCK....",
+                ".....KCCCCCCCCCCCCK.....",
+                "....KKCCKKKKKKKKCCKK....",
+                "...KGGCKCCGGGGCCKCGGK...",
+                "..KCCcCKCGGYYGGCKCcCCK..",
+                "..KCCK.KCGGGGGGCK.KCCK..",
+                "..KCK..KCCCCCCCCK..KCK..",
+                "..KK...KCCcKKcCCK...KK..",
+                ".......KCCK..KCCK.......",
+                ".......KCcK..KcCK.......",
+                "......KcccK..KcccK......",
+                "......KDDDK..KDDDK......",
+                "......KKKK....KKKK......",
+                "........................"
             ))
-            CharacterId.DOLLY -> sprite("char_dolly", listOf(
-                "...KKK....KKK...",
-                "..KHHHK..KHHHK..",
-                "..KHHKKKKKKHHK..",
-                "..KHPPPPPPPPHK..",
-                "..KHPKEKPKEPHK..",
-                "..KHPPPPPPPPHK..",
-                "...KKPRRRRPKK...",
-                "..KRRRRRRRRRRK..",
-                ".KPKRRRRRRRRKPK.",
-                "..K.KRRRRRRK.K..",
-                "....KPPKKPPK....",
-                "....KKK..KKK...."
+            CharacterId.DOLLY -> sprite("char_dolly_v2", listOf(
+                "......KKKK....KKKK......",
+                ".....KRRRRKKKKRRRRK.....",
+                "....KRRHHHKKKKHHHRRK....",
+                "...KHHHKKKKKKKKKKHHHK...",
+                "...KHHKPPPPPPPPPPKHHK...",
+                "...KHKPPPPPPPPPPPPKHK...",
+                "...KHKPPKEKPPKKEPPKHK...",
+                "...KHKPPKEKPPKKEPPKHK...",
+                "...KHKPPPPPPPPPPPPKHK...",
+                "....KKPPPKKRRKKPPPKK....",
+                ".....KKPPPPPPPPPPKK.....",
+                "....KKWWRRRRRRRRWWKK....",
+                "...KPPKRRRRRRRRRRKPPK...",
+                "..KPPKRRRRRRRRRRRRKPPK..",
+                "..KPK.KRRRRRRRRRRK.KPK..",
+                "...K..KRRRrrrrRRRK..K...",
+                ".....KRRRRrrrrRRRRK.....",
+                ".....KRRRRRRRRRRRRK.....",
+                "......KKKKKKKKKKKK......",
+                ".......KPPK..KPPK.......",
+                ".......KPPK..KPPK.......",
+                "......KDDDK..KDDDK......",
+                "......KKKK....KKKK......",
+                "........................"
             ))
-            CharacterId.HOPS -> sprite("char_hops", listOf(
-                "..KKK......KKK..",
-                "..KSSK....KSSK..",
-                "..KSSK....KSSK..",
-                "..KSSKKKKKKSSK..",
-                "..KSSSSSSSSSSK..",
-                "..KSSKEKKSKEK...",
-                "..KSSSSRRSSSSK..",
-                "...KKMMMMMMKK...",
-                "..KSSKMMMMKSSK..",
-                "..KK.KMMMMK.KK..",
-                ".....KSKKSK.....",
-                "....KSSKKSSK....",
-                "....KKKKKKKK...."
+            CharacterId.HOPS -> sprite("char_hops_v2", listOf(
+                ".....KKK........KKK.....",
+                "....KSSSK......KSSSK....",
+                "....KSPPK......KSPPK....",
+                "....KSPPK......KSPPK....",
+                "....KSSSK......KSSSK....",
+                "....KSSSKKKKKKKKSSSK....",
+                "...KSSSSSSSSSSSSSSSSK...",
+                "...KSSKEKKSSSSKKEKSSK...",
+                "...KSSKEKKSSSSKKEKSSK...",
+                "...KSSSSSSRRRRSSSSSSK...",
+                "....KKSSSSKKKKSSSSKK....",
+                ".....KKMMKGGGGKMMKK.....",
+                "...KSSKMMKGGGGKMMKSSK...",
+                "..KSSSKMMMMMMMMMMKSSSK..",
+                "..KSSK.KMMMMMMMMK.KSSK..",
+                "...KK..KMMKKKKMMK..KK...",
+                ".......KGGK..KGGK.......",
+                "......KCCC....CCCK......",
+                ".......KGGK..KGGK.......",
+                "......KSSSK..KSSSK......",
+                ".....KSSSSK..KSSSSK.....",
+                ".....KKKKK....KKKKK.....",
+                "........................",
+                "........................"
             ))
-            CharacterId.JACK -> sprite("char_jack", listOf(
-                ".KKK........KKK.",
-                ".KRRKK....KKGGK.",
-                "..KRRKKKKKKGGK..",
-                "...KWWWWWWWWK...",
-                "...KWKEKWKEWK...",
-                "...KWWWRRWWWK...",
-                "..KKRRRRRRRRKK..",
-                ".KGGKRRRRRRKGGK.",
-                "..KK.KLLLLK.KK..",
-                ".....KLKKLK.....",
-                "....KLLKKLLK....",
-                "....KKKKKKKK...."
+            CharacterId.JACK -> sprite("char_jack_v2", listOf(
+                "..KKK..............KKK..",
+                ".KGGGK............KRRRK.",
+                ".KGGKKK..........KKKRRK.",
+                "..KKRRKKK......KKKGGKK..",
+                "....KRRRRKKKKKKGGGGK....",
+                "....KWWWWWWWWWWWWWWK....",
+                "...KWWWWWWWWWWWWWWWWK...",
+                "...KWKKEKKWWWWKKEKKWK...",
+                "...KWKKEKKWWWWKKEKKWK...",
+                "...KWWWWWRRRRRRWWWWWK...",
+                "....KWWWKKKKKKKKWWWK....",
+                ".....KKKCCCCCCCCKKK.....",
+                "...KKGGRRRRRRRRRRGGKK...",
+                "..KRRKRRGGGGGGGGRRKLLK..",
+                "..KLK.KRRLLLLLLRRK.KGK..",
+                "...K..KLLLLLLLLLLK..K...",
+                "......KRRRRLLRRRRK......",
+                "......KLLLLRRLLLLK......",
+                "......KLLKK..KKLLK......",
+                ".....KDDDK....KDDDK.....",
+                "....KGGGGK....KGGGGK....",
+                "....KKKKK......KKKKK....",
+                "........................",
+                "........................"
             ))
-            CharacterId.STITCH -> sprite("char_stitch", listOf(
-                "....KKKKKKKK....",
-                "...KMMMMMMMMK...",
-                "..KMMKKMMKKEK...",
-                "..KMMMMMMMMMMK..",
-                "...KMKKKKKKMK...",
-                "..KKMMKRRKMMKK..",
-                ".KMMKMMRRMMKMMK.",
-                "..KK.KMMMMK.KK..",
-                ".....KMKKMK.....",
-                "....KMMKKMMK....",
-                "....KKKKKKKK...."
+            CharacterId.STITCH -> sprite("char_stitch_v2", listOf(
+                "........KKKKKKKK........",
+                "......KKMMMMMMMMKK......",
+                ".....KMMMMMMMMMMMMK.....",
+                "....KMMKKMMMMMMKKMMK....",
+                "...KMMKKEKMMMMKKEKMMK...",
+                "...KMMKKEKMMMMKKEKMMK...",
+                "...KMMMMMMMMMMMMMMMMK...",
+                "...KMKKKKMMMMMMKKKKMK...",
+                "....KKMMMMMMMMMMMMKK....",
+                ".....KKMMKKRRKKMMKK.....",
+                "...KKMMKMMRRRRMMKMMKK...",
+                "..KMMMKMMMRRRRMMKMMMKC..",
+                "..KMMK.KMMMMMMMMK.KMKCC.",
+                "..KMK..KMMMMMMMMK..KKCK.",
+                "...K...KMMKKKKMMK...KC..",
+                ".......KMMK..KMMK.......",
+                ".......KMMK..KMMK.......",
+                "......KMbMK..KMbMK......",
+                "......KbbKK..KKbbK......",
+                "......KKKK....KKKK......",
+                "........................",
+                "........................",
+                "........................",
+                "........................"
             ))
         }
     }
@@ -671,4 +746,9 @@ object PixelArtSprites {
     fun forBackpackTier(tier: BackpackTier): ImageBitmap = PixelArtAmpliacionSprites.forBackpackTier(tier)
     fun forBackpackItem(kind: BackpackItemKind): ImageBitmap = PixelArtAmpliacionSprites.forBackpackItem(kind)
     fun forLoreProp(prop: LoreProp): ImageBitmap = PixelArtAmpliacionSprites.forLoreProp(prop)
+    fun forLightSource(type: com.example.data.model.LightSourceType): ImageBitmap =
+        PixelArtMasterSprites.forLightSource(type)
+    fun lostToyToken(): ImageBitmap = PixelArtMasterSprites.lostToyToken()
+    fun forBossProp(kind: String, active: Boolean = true): ImageBitmap =
+        PixelArtMasterSprites.forBossProp(kind, active)
 }

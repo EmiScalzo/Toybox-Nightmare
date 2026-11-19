@@ -195,6 +195,63 @@ fun ToyboxScreenHeader(
 }
 
 @Composable
+fun ToyboxVisualBanner(
+    drawableRes: Int,
+    badge: String,
+    caption: String,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    borderColor: Color = TarnishedBrass,
+    heightDp: Int = 112
+) {
+    val shape = CutCornerShape(6.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(heightDp.dp)
+            .clip(shape)
+            .border(1.5.dp, borderColor, shape)
+    ) {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = drawableRes),
+            contentDescription = contentDescription,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            CharcoalBlack.copy(alpha = 0.88f),
+                            CharcoalBlack.copy(alpha = 0.52f),
+                            CharcoalBlack.copy(alpha = 0.25f)
+                        )
+                    )
+                )
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Text(
+                text = badge.uppercase(),
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.4.sp),
+                color = TarnishedBrass
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = caption,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = AgedIvory
+            )
+        }
+    }
+}
+
+@Composable
 fun DollPortraitCanvas(
     character: ToyCharacterDef,
     modifier: Modifier = Modifier
@@ -206,17 +263,23 @@ fun DollPortraitCanvas(
         val cy = h / 2f
         val accentCol = Color(character.accentColorHex)
 
-        // Wooden vitrine frame glow
+        // Wooden vitrine frame glow & subtle vignette
         drawRect(
             brush = Brush.radialGradient(
-                listOf(accentCol.copy(alpha = 0.24f), Color.Transparent),
+                listOf(accentCol.copy(alpha = 0.32f), CharcoalBlack.copy(alpha = 0.45f)),
                 center = Offset(cx, cy),
-                radius = w * 0.6f
+                radius = w * 0.65f
             )
+        )
+        drawCircle(
+            color = TarnishedBrassDim.copy(alpha = 0.35f),
+            radius = w * 0.42f,
+            center = Offset(cx, cy),
+            style = Stroke(width = 1.5f)
         )
 
         val bmp = PixelArtSprites.forCharacter(character.id)
-        val pad = (w * 0.12f).toInt()
+        val pad = (w * 0.08f).toInt()
         drawImage(
             image = bmp,
             dstOffset = IntOffset(pad, pad),

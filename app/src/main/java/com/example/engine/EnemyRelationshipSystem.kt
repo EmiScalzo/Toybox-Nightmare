@@ -1,12 +1,20 @@
 package com.example.engine
 
+import com.example.data.model.DamageElement
+import com.example.data.model.EmergentRoomScenario
+import com.example.data.model.EnemyAlertState
 import com.example.data.model.EnemyFaction
+import com.example.data.model.EnemyHpTier
+import com.example.data.model.EnemyMaterialType
 import com.example.data.model.EnemyRole
 import com.example.data.model.EnemyType
 import com.example.data.model.EngineEventType
+import com.example.data.model.InteractableType
+import com.example.data.model.darknessTrait
 import com.example.data.model.defaultFaction
 import com.example.data.model.defaultRole
-import kotlin.math.atan2
+import com.example.data.model.hpTier
+import com.example.data.model.materialType
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -14,10 +22,54 @@ import kotlin.random.Random
 
 object EnemyRelationshipSystem {
 
+    fun computeElementalDamage(
+        rawDamage: Float,
+        element: DamageElement,
+        material: EnemyMaterialType
+    ): Float {
+        val mult = when (material) {
+            EnemyMaterialType.PORCELAIN -> when (element) {
+                DamageElement.BLUNT_HEAVY, DamageElement.EXPLOSIVE -> 1.45f
+                DamageElement.PHYSICAL_LIGHT -> 0.72f
+                else -> 1.0f
+            }
+            EnemyMaterialType.CLOTH -> when (element) {
+                DamageElement.FIRE, DamageElement.SHARP -> 1.40f
+                DamageElement.BLUNT_HEAVY -> 0.75f
+                else -> 1.0f
+            }
+            EnemyMaterialType.METAL -> when (element) {
+                DamageElement.ELECTRIC, DamageElement.EXPLOSIVE -> 1.45f
+                DamageElement.SHARP -> 0.65f
+                DamageElement.PHYSICAL_LIGHT -> 0.75f
+                else -> 1.0f
+            }
+            EnemyMaterialType.WOOD -> when (element) {
+                DamageElement.FIRE, DamageElement.EXPLOSIVE -> 1.38f
+                DamageElement.ELECTRIC -> 0.72f
+                else -> 1.0f
+            }
+            EnemyMaterialType.RUBBER -> when (element) {
+                DamageElement.ELECTRIC -> 0.40f
+                DamageElement.BLUNT_HEAVY -> 0.75f
+                DamageElement.SHARP -> 1.38f
+                else -> 1.0f
+            }
+            EnemyMaterialType.MECHANISM -> when (element) {
+                DamageElement.ELECTRIC -> 1.50f
+                DamageElement.BLUNT_HEAVY -> 1.25f
+                DamageElement.FIRE -> 0.80f
+                else -> 1.0f
+            }
+        }
+        return rawDamage * mult
+    }
+
     fun initializeRoomRelationships(
         enemies: List<ActiveEnemy>,
         hasBell: Boolean,
-        defeatedCaptainsCount: Int
+        defeatedCaptainsCount: Int,
+        scenario: EmergentRoomScenario = EmergentRoomScenario.STANDARD
     ): Pair<List<ActiveEnemy>, Pair<Float, Float>?> {
         val bellPos = if (hasBell || enemies.any { it.type == EnemyType.CLOCKWORK_COURIER }) {
             ARENA_W * 0.84f to ARENA_H * 0.22f
@@ -27,13 +79,24 @@ object EnemyRelationshipSystem {
             it.type == EnemyType.TIN_SOLDIER || it.type == EnemyType.CREEPY_DOLL || it.type == EnemyType.STITCH_MECHANIC
         }
 
-        val withRoles = enemies.map { e ->
+        val withRoles = enemies.mapIndexed { idx, e ->
             val role = e.type.defaultRole()
             val faction = e.type.defaultFaction()
             val scaredFromPast = defeatedCaptainsCount >= 2 && e.type == EnemyType.TIN_SOLDIER && Random.nextFloat() < 0.25f
+            val startsSleeping = scenario == EmergentRoomScenario.SLEEPING_DEN && !e.type.isBoss && idx > 0
+            val initAlert = when {
+                scaredFromPast -> EnemyAlertState.PANIC
+                startsSleeping -> EnemyAlertState.CALM
+                scenario == EmergentRoomScenario.GUARDING_VALUABLE && !e.type.isBoss -> EnemyAlertState.SUSPICIOUS
+                else -> EnemyAlertState.COMBAT
+            }
             e.copy(
                 role = role,
                 faction = faction,
+                materialType = e.type.materialType(),
+                darknessTrait = e.type.darknessTrait(),
+                alertState = initAlert,
+                isSleeping = startsSleeping,
                 protectedAllyId = if (role == EnemyRole.PROTECTOR) fragileTarget?.id else null,
                 fleeing = scaredFromPast
             )
@@ -54,18 +117,71 @@ object EnemyRelationshipSystem {
         var banner = s.activeBanner
         var escapedCowards = s.escapedCowardsCount
 
-        val hasLeaderAlive = enemies.any { it.role == EnemyRole.LEADER && it.hp > 0f }
+        val mods = EmotionSystem.computeModifiers(s.emotionState)
+        val hasRechargeStation = s.roomInteractables.firstOrNull { it.type == InteractableType.RECHARGE_STATION && !it.destroyed }
+        val clowns = enemies.filter { it.type == EnemyType.PORCELAIN_CLOWN && it.hp > 0f }
 
-        // Check if Protector shields or guards fragile ally
+        // Check if Protector shields or guards fragile ally, update 5 Alert States & Factions
         for (i in enemies.indices) {
             var e = enemies[i]
             if (e.hp <= 0f) continue
 
-            // Faction rivalry: Tin Army vs Rag Plush occasional skirmish when not focusing player closely
-            if (e.faction == EnemyFaction.TIN_ARMY && !e.type.isBoss && Random.nextFloat() < 0.015f) {
-                val rivalIdx = enemies.indexOfFirst { it.id != e.id && it.faction == EnemyFaction.RAG_PLUSH && hypot(it.x - e.x, it.y - e.y) < 120f }
+            // Update 5-level alert state (CALM / SUSPICIOUS / ALERT / COMBAT / PANIC)
+            val distToPlayer = hypot(s.playerX - e.x, s.playerY - e.y)
+            val detectRange = 220f * mods.noiseMult * mods.enemyDetectMult
+            if (e.alertState != EnemyAlertState.COMBAT && e.alertState != EnemyAlertState.PANIC) {
+                when {
+                    distToPlayer < detectRange * 0.68f || e.hp < e.maxHp -> {
+                        e = e.copy(alertState = EnemyAlertState.COMBAT, isSleeping = false, suspicion = 1f)
+                    }
+                    distToPlayer < detectRange -> {
+                        val nextSus = (e.suspicion + dt * 0.8f).coerceAtMost(1f)
+                        val nextAlert = if (nextSus >= 0.7f) EnemyAlertState.ALERT else EnemyAlertState.SUSPICIOUS
+                        e = e.copy(alertState = nextAlert, suspicion = nextSus, isSleeping = false)
+                    }
+                }
+            }
+
+            // Porcelain Clown laugh occasionally scares VERY_WEAK / WEAK nearby allies into PANIC
+            if (clowns.isNotEmpty() && e.type != EnemyType.PORCELAIN_CLOWN && !e.type.isBoss &&
+                e.type.hpTier() in setOf(EnemyHpTier.VERY_WEAK, EnemyHpTier.WEAK) &&
+                e.alertState != EnemyAlertState.PANIC &&
+                clowns.any { hypot(it.x - e.x, it.y - e.y) < 160f } && Random.nextFloat() < dt * 0.35f
+            ) {
+                e = e.copy(alertState = EnemyAlertState.PANIC, fleeing = true, scareTimer = 3.2f)
+            }
+            if (e.scareTimer > 0f) {
+                val rem = (e.scareTimer - dt).coerceAtLeast(0f)
+                e = e.copy(
+                    scareTimer = rem,
+                    alertState = if (rem <= 0f) EnemyAlertState.COMBAT else EnemyAlertState.PANIC,
+                    fleeing = rem > 0f
+                )
+            }
+
+            // Injured mechanical toys seek Recharge Stations to recover HP
+            if (hasRechargeStation != null &&
+                e.materialType in setOf(EnemyMaterialType.MECHANISM, EnemyMaterialType.METAL) &&
+                e.hp < e.maxHp * 0.60f && !e.type.isBoss
+            ) {
+                val dx = hasRechargeStation.x - e.x
+                val dy = hasRechargeStation.y - e.y
+                val d = hypot(dx, dy).coerceAtLeast(1f)
+                if (d < 46f) {
+                    e = e.copy(hp = (e.hp + 8f * dt).coerceAtMost(e.maxHp))
+                } else {
+                    e = e.copy(
+                        x = e.x + (dx / d) * e.type.speed * 0.9f * dt,
+                        y = e.y + (dy / d) * e.type.speed * 0.9f * dt
+                    )
+                }
+            }
+
+            // Faction rivalry: Tin Army vs Rag Plush real skirmish when rival is close
+            if (e.faction == EnemyFaction.TIN_ARMY && !e.type.isBoss && Random.nextFloat() < 0.025f) {
+                val rivalIdx = enemies.indexOfFirst { it.id != e.id && it.faction == EnemyFaction.RAG_PLUSH && hypot(it.x - e.x, it.y - e.y) < 130f }
                 if (rivalIdx != -1 && enemies[rivalIdx].hp > 0f) {
-                    enemies[rivalIdx] = enemies[rivalIdx].copy(hp = enemies[rivalIdx].hp - 4f, hitFlashTimer = 0.1f)
+                    enemies[rivalIdx] = enemies[rivalIdx].copy(hp = enemies[rivalIdx].hp - 5f, hitFlashTimer = 0.12f)
                 }
             }
 
@@ -150,7 +266,9 @@ object EnemyRelationshipSystem {
                                     maxHp = backup.maxHp * s.difficulty.enemyHpMult,
                                     radius = 21f,
                                     role = backup.defaultRole(),
-                                    faction = backup.defaultFaction()
+                                    faction = backup.defaultFaction(),
+                                    materialType = backup.materialType(),
+                                    darknessTrait = backup.darknessTrait()
                                 )
                             )
                             e = e.copy(hp = 0f) // Coward alerts & flees room

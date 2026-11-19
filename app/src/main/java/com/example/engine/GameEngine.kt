@@ -64,6 +64,12 @@ class GameEngine(
 
         val synergies = GameCatalog.computeActiveSynergies(parts, items)
 
+        val startInteractables = InteractablesSystem.generateForRoom(
+            RoomType.START, 1, startRoom.obstacles, null, ::allocId, lightingMode = startRoom.lightingMode
+        )
+        val startLamps = LightingSystem.generateRoomLamps(startRoom, ::allocId)
+        val initialContracts = ContractSystem.generateBoardContracts(1)
+
         return GameRunState(
             isActive = true,
             character = character,
@@ -83,6 +89,13 @@ class GameEngine(
             buttons = if (difficulty == Difficulty.SUAVE) 6 else 3,
             pendingGrudgeCompanions = initialGrudges,
             pickups = emptyList(),
+            roomInteractables = startInteractables,
+            roomLamps = startLamps,
+            ownedLightSources = listOf(LightSourceType.CANDLE),
+            lightSource = LightSourceType.CANDLE,
+            lightOn = true,
+            lightSourceCharge = 100f,
+            availableContracts = initialContracts,
             activeBanner = RunUiBanner(
                 title = "Piso 1: ${GameCatalog.floors[0].name}",
                 subtitle = GameCatalog.floors[0].subtitle
@@ -97,7 +110,7 @@ class GameEngine(
         if (!state.isActive || state.isPaused || state.isGameOver || state.isVictory ||
             state.activeEvent != null || state.pendingPartChoice != null ||
             state.pendingCompanionDialog != null || state.manufacturerEncounter != null ||
-            state.pendingArchiveDiscovery != null ||
+            state.pendingArchiveDiscovery != null || state.contractBoardOpen ||
             state.shopOpen || state.repairBenchOpen
         ) {
             return state
@@ -126,6 +139,10 @@ class GameEngine(
         // Check periodic torso/item sound & stun waves
         s = updatePeriodicWaves(s, dt)
 
+        // Lighting & Emotional state updates
+        s = LightingSystem.stepLighting(s, dt)
+        s = EmotionSystem.stepEmotions(s, dt)
+
         // Player Movement & Dodge
         s = updatePlayerMovement(s, input, dt)
 
@@ -138,6 +155,9 @@ class GameEngine(
         // Manual Aim & Shoot
         s = updatePlayerShooting(s, input, dt)
 
+        // Boss Arena Mechanics & 3-Phase Transitions (consumes projectiles hitting anchors/boxes/switches)
+        s = BossMechanicSystem.stepBossMechanics(s, dt, ::allocId)
+
         // Update Bombs
         s = updateBombs(s, dt)
 
@@ -148,11 +168,18 @@ class GameEngine(
         // Update Alternative Room Objectives
         s = RoomObjectiveSystem.stepObjective(s, dt, ::damagePlayer, ::allocId, sfx)
 
-        // Check Physical Secret Anomalies
+        // Check Physical Secret Anomalies & Lore Room Puzzles
+        val prevAnomResolved = s.roomAnomalies.count { it.resolved }
+        val prevPuzzlesSolved = s.lorePuzzlesSolvedThisRun
         s = SecretDiscoverySystem.stepAnomalies(s, ::allocId, sfx, onDiscovery)
-
-        // Interactive Lore Room Puzzles
         s = PuzzleInteractionSystem.stepLoreProps(s, dt, ::damagePlayer, ::allocId, sfx, onDiscovery, onAchievement, onLorePuzzleSolved)
+        if (s.roomAnomalies.count { it.resolved } > prevAnomResolved || s.lorePuzzlesSolvedThisRun > prevPuzzlesSolved) {
+            s = ContractSystem.onRelicOrClueFound(s)
+            s = EmotionSystem.triggerEmotion(s, PatchEmotion.CURIOSITY, 24f, 20f)
+        }
+
+        // Update Labyrinth Progress & Conveyor Physics
+        s = LabyrinthSystem.stepLabyrinth(s, dt, ::allocId)
 
         // Update Conditional Companions
         s = CompanionSystem.updateCompanions(s, dt, ::allocId, sfx)
@@ -247,17 +274,18 @@ class GameEngine(
         if (state.equippedParts[BodyZone.LEGS]?.wearState == WearState.CRITICAL) {
             speedMult *= 0.86f
         }
+        val emotionMods = EmotionSystem.computeModifiers(state.emotionState)
         state.passiveItems.forEach { speedMult *= it.effects.speedMult }
         state.activeDefects.forEach { speedMult *= it.effects.speedMult }
         if (state.activeSynergies.any { it.effectId == "carousel_overclock" }) speedMult *= 1.12f
-        speedMult *= BackpackSystem.speedPenaltyMult(state)
+        speedMult *= BackpackSystem.speedPenaltyMult(state) * emotionMods.moveSpeedMult
 
         val maxSpeed = state.character.baseSpeed * speedMult
 
         var vx: Float
         var vy: Float
         if (state.dodgeTimer > 0f) {
-            var dodgeMult = 2.55f
+            var dodgeMult = 2.55f * emotionMods.dodgeLengthMult
             state.equippedParts.values.filter { !it.isDetached }.forEach {
                 if (it.wearState != WearState.CRITICAL) dodgeMult *= it.def.effects.dodgeLengthMult
             }
@@ -409,9 +437,13 @@ class GameEngine(
                 }
             }
         }
+        val emotionMods = EmotionSystem.computeModifiers(state.emotionState)
         if (state.abilityBuffTimer > 0f) fireRate *= 2.0f
         if (state.impulseBurstTimer > 0f) fireRate *= 1.45f
         if (state.activeSynergies.any { it.effectId == "carousel_overclock" }) fireRate *= 1.22f
+        dmg *= emotionMods.damageMult
+        fireRate *= emotionMods.fireRateMult
+        spread = (spread + emotionMods.spreadDelta).coerceAtLeast(0f)
 
         val isDouble = state.activeSynergies.any { it.effectId == "double_shot" }
         val isHoming = state.passiveItems.any { it.effects.homingBullets } ||
@@ -432,7 +464,8 @@ class GameEngine(
             dmg += minOf(6f, state.buttons * 0.15f)
         }
         val totalCrit = state.passiveItems.sumOf { it.effects.critChance.toDouble() }.toFloat() +
-            (if (state.activeSynergies.any { it.effectId == "oracle_crit" }) 0.20f else 0f)
+            (if (state.activeSynergies.any { it.effectId == "oracle_crit" }) 0.20f else 0f) +
+            emotionMods.critBonus
         val isCrit = totalCrit > 0f && Random.nextFloat() < totalCrit
         if (isCrit) dmg *= 1.75f
 
@@ -683,6 +716,7 @@ class GameEngine(
                     toyboxMemory = mem,
                     activeBanner = banner
                 )
+                s = ContractSystem.onBombUsed(s)
             }
             ConsumableType.SEWING_KIT -> {
                 val mostDamaged = s.equippedParts.values.minByOrNull { if (it.isDetached) -1 else it.durability }
@@ -700,6 +734,7 @@ class GameEngine(
                         usedAnyRepair = true,
                         activeBanner = RunUiBanner("Kit de Costura", "${mostDamaged.def.name} reparado (+$gain).", 0xFF597354, 2.0f)
                     )
+                    s = ContractSystem.onRepairDone(s, viaBench = false)
                 }
             }
             ConsumableType.REPAIR_PATCH -> {
@@ -710,6 +745,7 @@ class GameEngine(
                     usedAnyRepair = true,
                     activeBanner = RunUiBanner("Parche de Tela", "+1 Corazón y +20 durabilidad general.", 0xFF597354, 2.0f)
                 )
+                s = ContractSystem.onRepairDone(s, viaBench = false)
             }
             ConsumableType.WINDUP_STRING -> {
                 sfx.play(ToySfx.SYNERGY)
@@ -790,9 +826,20 @@ class GameEngine(
                 var killsInBlast = 0
                 val updatedEnemies = s.enemies.map { e ->
                     if (hypot(e.x - b.x, e.y - b.y) <= b.radius + e.radius) {
-                        val newHp = e.hp - b.damage
-                        if (newHp <= 0f && e.hp > 0f) killsInBlast++
-                        e.copy(hp = newHp, hitFlashTimer = 0.2f)
+                        if (!LightingSystem.isVeiledSpecterVulnerable(s, e)) {
+                            e
+                        } else {
+                            val elemDmg = EnemyRelationshipSystem.computeElementalDamage(
+                                b.damage, DamageElement.EXPLOSIVE, e.materialType
+                            )
+                            val (finalDmg, afterBoss) = if (e.type.isBoss) {
+                                val (bd, be, _) = BossMechanicSystem.computeIncomingDamage(s, e, elemDmg, DamageElement.EXPLOSIVE)
+                                bd to be
+                            } else elemDmg to e
+                            val newHp = afterBoss.hp - finalDmg
+                            if (newHp <= 0f && e.hp > 0f) killsInBlast++
+                            afterBoss.copy(hp = newHp, hitFlashTimer = 0.2f, alertState = EnemyAlertState.COMBAT, isSleeping = false)
+                        }
                     } else e
                 }
                 if (killsInBlast >= 2 && b.fromPlayer) onAchievement("ach_bomb_multikill")
@@ -836,9 +883,11 @@ class GameEngine(
         val targetX = s.decoys.firstOrNull()?.x ?: s.playerX
         val targetY = s.decoys.firstOrNull()?.y ?: s.playerY
 
+        val emotionMods = EmotionSystem.computeModifiers(s.emotionState)
         val detectionMult = (s.passiveItems.fold(1f) { acc, i -> acc * i.effects.enemyDetectionMult }) *
             (if (s.activeDefects.any { it.effects.noisySteps }) 1.35f else 1f) *
-            (if (s.stealthTimer > 0f) 0.4f else 1f)
+            (if (s.stealthTimer > 0f) 0.4f else 1f) *
+            emotionMods.enemyDetectMult * emotionMods.noiseMult
         val bulletSlowMult = s.passiveItems.fold(1f) { acc, i -> acc * i.effects.slowEnemyBulletsMult }
         val aggroMult = if (s.passiveItems.any { it.effects.bonusDropsAndAggro }) 1.2f else 1f
 
@@ -860,12 +909,24 @@ class GameEngine(
                 continue
             }
 
+            if (enemy.isSleeping && enemy.alertState == EnemyAlertState.CALM) {
+                nextEnemies.add(enemy)
+                continue
+            }
+
             val dx = targetX - enemy.x
             val dy = targetY - enemy.y
             val dist = hypot(dx, dy).coerceAtLeast(1f)
             val dirX = dx / dist
             val dirY = dy / dist
             val moveSpeed = enemy.type.speed * s.difficulty.enemySpeedMult * aggroMult
+
+            if (enemy.alertState == EnemyAlertState.PANIC || (enemy.fleeing && enemy.role != EnemyRole.COWARD)) {
+                val fx = (enemy.x - dirX * moveSpeed * 1.15f * dt).coerceIn(WALL_THICKNESS + enemy.radius, ARENA_W - WALL_THICKNESS - enemy.radius)
+                val fy = (enemy.y - dirY * moveSpeed * 1.15f * dt).coerceIn(WALL_THICKNESS + enemy.radius, ARENA_H - WALL_THICKNESS - enemy.radius)
+                nextEnemies.add(enemy.copy(x = fx, y = fy))
+                continue
+            }
 
             // Thief gremlin seeks dropped detached body parts OR active bombs if Toybox Memory triggered!
             if (enemy.type == EnemyType.THIEF_GREMLIN) {
@@ -993,11 +1054,13 @@ class GameEngine(
                 }
 
                 EnemyType.CLOCKWORK_SPIDER -> {
+                    val fleeLight = LightingSystem.isPointLitByPlayer(s, enemy.x, enemy.y)
+                    val mSign = if (fleeLight) -1.25f else 1f
                     val strafeX = -dirY * sin(enemy.stateTimer * 4f) * 0.6f
                     val strafeY = dirX * sin(enemy.stateTimer * 4f) * 0.6f
                     enemy = enemy.copy(
-                        x = enemy.x + (dirX + strafeX) * moveSpeed * dt,
-                        y = enemy.y + (dirY + strafeY) * moveSpeed * dt
+                        x = enemy.x + (dirX * mSign + strafeX) * moveSpeed * dt,
+                        y = enemy.y + (dirY * mSign + strafeY) * moveSpeed * dt
                     )
                 }
 
@@ -1218,7 +1281,7 @@ class GameEngine(
                 EnemyType.WEEPING_TOY -> {
                     val watched = RoomMechanicSystem.isWeepingToyWatched(
                         enemy.x, enemy.y, s.playerX, s.playerY, s.facingAngle
-                    )
+                    ) || LightingSystem.isPointIlluminated(s, enemy.x, enemy.y)
                     if (watched) {
                         enemy = enemy.copy(disguised = true, vx = 0f, vy = 0f)
                     } else {
@@ -1263,11 +1326,12 @@ class GameEngine(
                 }
 
                 EnemyType.CLOCKWORK_COURIER -> {
-                    val awayX = if (s.alarmBellPos == null) -dirX else 0f
-                    val awayY = if (s.alarmBellPos == null) -dirY else 0f
+                    val litFlee = LightingSystem.isPointLitByPlayer(s, enemy.x, enemy.y)
+                    val awayX = if (s.alarmBellPos == null || litFlee) -dirX else 0f
+                    val awayY = if (s.alarmBellPos == null || litFlee) -dirY else 0f
                     enemy = enemy.copy(
-                        x = enemy.x + awayX * moveSpeed * dt,
-                        y = enemy.y + awayY * moveSpeed * dt
+                        x = enemy.x + awayX * moveSpeed * (if (litFlee) 1.2f else 1f) * dt,
+                        y = enemy.y + awayY * moveSpeed * (if (litFlee) 1.2f else 1f) * dt
                     )
                 }
 
@@ -1289,6 +1353,62 @@ class GameEngine(
                             )
                         )
                         enemy = enemy.copy(attackTimer = 2.0f)
+                    }
+                }
+
+                EnemyType.VEILED_SPECTER -> {
+                    val hoverX = -dirY * sin(enemy.stateTimer * 2.5f) * 0.45f
+                    val hoverY = dirX * sin(enemy.stateTimer * 2.5f) * 0.45f
+                    enemy = enemy.copy(
+                        x = enemy.x + (dirX * 0.75f + hoverX) * moveSpeed * dt,
+                        y = enemy.y + (dirY * 0.75f + hoverY) * moveSpeed * dt,
+                        attackTimer = enemy.attackTimer - dt
+                    )
+                    if (enemy.attackTimer <= 0f) {
+                        val a = computeAimAngle(enemy.x, enemy.y, s, 295f * bulletSlowMult)
+                        newEnemyProjs.add(
+                            ActiveProjectile(
+                                id = allocId(), x = enemy.x, y = enemy.y,
+                                vx = cos(a) * 295f * bulletSlowMult,
+                                vy = sin(a) * 295f * bulletSlowMult,
+                                radius = 10f, damage = 1f, fromPlayer = false, colorHex = 0xFF9E64B5
+                            )
+                        )
+                        enemy = enemy.copy(attackTimer = 2.1f / aggroMult)
+                    }
+                }
+
+                EnemyType.LAMP_SNUFFER -> {
+                    val anyLitLamp = s.roomLamps.any { it.lit }
+                    if (!anyLitLamp) {
+                        enemy = enemy.copy(
+                            x = enemy.x + dirX * moveSpeed * dt,
+                            y = enemy.y + dirY * moveSpeed * dt
+                        )
+                    }
+                }
+
+                EnemyType.CLOCKWORK_SENTINEL -> {
+                    val moveFactor = if (dist > 220f) 0.9f else if (dist < 130f) -0.4f else 0.15f
+                    enemy = enemy.copy(
+                        x = enemy.x + dirX * moveSpeed * moveFactor * dt,
+                        y = enemy.y + dirY * moveSpeed * moveFactor * dt,
+                        attackTimer = enemy.attackTimer - dt
+                    )
+                    if (enemy.attackTimer <= 0f) {
+                        val baseAng = computeAimAngle(enemy.x, enemy.y, s, 290f * bulletSlowMult)
+                        for (i in -1..1) {
+                            val a = baseAng + i * 0.22f
+                            newEnemyProjs.add(
+                                ActiveProjectile(
+                                    id = allocId(), x = enemy.x, y = enemy.y,
+                                    vx = cos(a) * 290f * bulletSlowMult,
+                                    vy = sin(a) * 290f * bulletSlowMult,
+                                    radius = 11f, damage = 1f, fromPlayer = false, colorHex = 0xFFC89948
+                                )
+                            )
+                        }
+                        enemy = enemy.copy(attackTimer = 2.0f / aggroMult)
                     }
                 }
 
@@ -1350,19 +1470,24 @@ class GameEngine(
         )
         if (b.attackTimer <= 0f) {
             val phase = (b.phase + 1) % 3
-            val enraged = b.hp < b.maxHp * 0.5f
+            val enraged = b.bossCurrentPhase >= 3 || b.hp < b.maxHp * 0.4f
+            val pMult = when (b.bossCurrentPhase) {
+                3 -> 2
+                2 -> 1
+                else -> 0
+            }
             val baseAngle = computeAimAngle(b.x, b.y, state, 310f * bulletSlowMult)
             when (b.type) {
                 EnemyType.BOSS_BOTONERO -> when (phase) {
                     0 -> {
-                        val dirs = if (enraged) 8 else 4
+                        val dirs = (if (enraged) 8 else 4) + pMult * 2
                         for (i in 0 until dirs) {
                             val a = (i / dirs.toFloat()) * (2f * PI.toFloat()) + (if (enraged) b.stateTimer * 0.3f else 0f)
                             outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 310f * bulletSlowMult, sin(a) * 310f * bulletSlowMult, 11f, 1f, false, 0xFFE5A93B))
                         }
                     }
                     1 -> {
-                        for (i in -2..2) {
+                        for (i in -(2 + pMult / 2)..(2 + pMult / 2)) {
                             val a = baseAngle + i * 0.18f
                             outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 335f * bulletSlowMult, sin(a) * 335f * bulletSlowMult, 9.5f, 1f, false, 0xFFD13B42))
                         }
@@ -1373,13 +1498,14 @@ class GameEngine(
                 }
                 EnemyType.BOSS_TITIRITERO -> when (phase) {
                     0 -> {
-                        for (i in 0 until 4) {
-                            val a = (PI.toFloat() / 4f) + i * (PI.toFloat() / 2f)
+                        val dirs = 4 + pMult * 2
+                        for (i in 0 until dirs) {
+                            val a = (PI.toFloat() / 4f) + i * ((2f * PI.toFloat()) / dirs)
                             outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 320f * bulletSlowMult, sin(a) * 320f * bulletSlowMult, 10f, 1f, false, 0xFFD9E0E6))
                         }
                     }
                     1 -> {
-                        for (i in -1..1) {
+                        for (i in -1 - (pMult / 2)..1 + (pMult / 2)) {
                             val a = baseAngle + i * 0.22f
                             outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 350f * bulletSlowMult, sin(a) * 350f * bulletSlowMult, 9f, 1f, false, 0xFF9E64B5))
                         }
@@ -1390,7 +1516,7 @@ class GameEngine(
                 }
                 EnemyType.BOSS_RELOJERO -> when (phase) {
                     0 -> {
-                        val count = if (enraged) 12 else 9
+                        val count = (if (enraged) 12 else 9) + pMult
                         for (i in 0 until count) {
                             val a = (i / count.toFloat()) * (2f * PI.toFloat()) + b.stateTimer * 1.4f
                             outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 265f * bulletSlowMult, sin(a) * 265f * bulletSlowMult, 10f, 1f, false, 0xFFC89948))
@@ -1408,14 +1534,14 @@ class GameEngine(
                 }
                 EnemyType.BOSS_BUHONERO -> when (phase) {
                     0 -> {
-                        val count = if (enraged) 6 else 4
+                        val count = (if (enraged) 6 else 4) + pMult
                         for (i in 0 until count) {
                             val a = baseAngle + (i - count / 2f) * 0.25f
                             outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 300f * bulletSlowMult, sin(a) * 300f * bulletSlowMult, 11.5f, 1f, false, 0xFFD13B42))
                         }
                     }
                     1 -> {
-                        val count = if (enraged) 10 else 8
+                        val count = (if (enraged) 10 else 8) + pMult
                         for (i in 0 until count) {
                             val a = (i / count.toFloat()) * (2f * PI.toFloat()) + b.stateTimer
                             outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 260f * bulletSlowMult, sin(a) * 260f * bulletSlowMult, 10f, 1f, false, 0xFF9E64B5))
@@ -1426,10 +1552,48 @@ class GameEngine(
                         outMinions.add(ActiveEnemy(id = allocId(), type = minion, x = (b.x - 40f).coerceAtLeast(120f), y = b.y, hp = minion.maxHp * 0.65f, maxHp = minion.maxHp * 0.65f, radius = 19f))
                     }
                 }
+                EnemyType.BOSS_SUBSUELO -> when (phase) {
+                    0 -> {
+                        val count = 8 + pMult * 2
+                        for (i in 0 until count) {
+                            val a = (i / count.toFloat()) * (2f * PI.toFloat()) + b.stateTimer * 0.7f
+                            outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 275f * bulletSlowMult, sin(a) * 275f * bulletSlowMult, 11f, 1f, false, 0xFF4C8EA8))
+                        }
+                    }
+                    1 -> {
+                        for (i in -2..2) {
+                            val a = baseAngle + i * 0.20f
+                            outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 340f * bulletSlowMult, sin(a) * 340f * bulletSlowMult, 10f, 1f, false, 0xFFE5A93B))
+                        }
+                    }
+                    else -> if (state.enemies.size < 3) {
+                        val mType = if (b.bossCurrentPhase >= 2) EnemyType.LAMP_SNUFFER else EnemyType.CLOCKWORK_SPIDER
+                        outMinions.add(ActiveEnemy(id = allocId(), type = mType, x = b.x, y = (b.y + 55f).coerceAtMost(ARENA_H - 120f), hp = mType.maxHp * 0.65f, maxHp = mType.maxHp * 0.65f, radius = 19f))
+                    }
+                }
+                EnemyType.BOSS_FABRICANTE -> when (phase) {
+                    0 -> {
+                        val count = 10 + pMult * 2
+                        for (i in 0 until count) {
+                            val a = (i / count.toFloat()) * (2f * PI.toFloat()) + b.stateTimer * 1.1f
+                            outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 290f * bulletSlowMult, sin(a) * 290f * bulletSlowMult, 10.5f, 1f, false, 0xFFC89948))
+                        }
+                    }
+                    1 -> {
+                        for (i in -(2 + pMult / 2)..(2 + pMult / 2)) {
+                            val a = baseAngle + i * 0.16f
+                            outProjs.add(ActiveProjectile(allocId(), b.x, b.y, cos(a) * 355f * bulletSlowMult, sin(a) * 355f * bulletSlowMult, 10f, 1f, false, 0xFFD13B42))
+                        }
+                    }
+                    else -> if (state.enemies.size < 3) {
+                        val mType = if (b.bossCurrentPhase >= 2) EnemyType.VEILED_SPECTER else EnemyType.CLOCKWORK_SENTINEL
+                        outMinions.add(ActiveEnemy(id = allocId(), type = mType, x = (b.x - 45f).coerceAtLeast(120f), y = b.y, hp = mType.maxHp * 0.55f, maxHp = mType.maxHp * 0.55f, radius = 21f))
+                    }
+                }
                 else -> when (phase) {
                     0 -> {
                         // Fan volley
-                        val spreadCount = if (enraged) 5 else 3
+                        val spreadCount = (if (enraged) 5 else 3) + (if (b.bossCurrentPhase >= 2) 2 else 0)
                         for (i in -(spreadCount / 2)..(spreadCount / 2)) {
                             val a = baseAngle + i * 0.24f
                             outProjs.add(
@@ -1444,7 +1608,7 @@ class GameEngine(
                     }
                     1 -> {
                         // Radial ring
-                        val count = if (enraged) 10 else 8
+                        val count = (if (enraged) 10 else 8) + pMult * 2
                         for (i in 0 until count) {
                             val a = (i / count.toFloat()) * (2f * PI.toFloat()) + b.stateTimer
                             outProjs.add(
@@ -1465,6 +1629,7 @@ class GameEngine(
                                 EnemyType.BOSS_NINERA -> EnemyType.CREEPY_DOLL
                                 EnemyType.BOSS_MAESTRO -> EnemyType.PORCELAIN_CLOWN
                                 EnemyType.BOSS_COLECCIONISTA -> EnemyType.RUSTY_TIN_KNIGHT
+                                EnemyType.BOSS_MADRE -> EnemyType.SHADOW_PUPPET
                                 else -> EnemyType.TIN_SOLDIER
                             }
                             outMinions.add(
@@ -1482,7 +1647,12 @@ class GameEngine(
                     }
                 }
             }
-            b = b.copy(phase = phase, attackTimer = if (enraged) 1.2f else 1.55f)
+            val nextCd = when (b.bossCurrentPhase) {
+                3 -> 1.08f
+                2 -> 1.30f
+                else -> if (enraged) 1.2f else 1.55f
+            }
+            b = b.copy(phase = phase, attackTimer = nextCd)
         }
         return b
     }
@@ -1498,9 +1668,18 @@ class GameEngine(
         return atan2(ty - ey, tx - ex)
     }
 
+    private fun attackStyleToDamageElement(style: AttackStyle, damage: Float): DamageElement = when (style) {
+        AttackStyle.SCISSOR_SLASH, AttackStyle.RAPID_NEEDLES -> DamageElement.SHARP
+        AttackStyle.EXPLOSIVE_TOY -> DamageElement.EXPLOSIVE
+        AttackStyle.DOLL_BOLT -> DamageElement.ELECTRIC
+        AttackStyle.GEAR_PROJECTILE, AttackStyle.BUTTON_SHOT ->
+            if (damage >= 18f) DamageElement.BLUNT_HEAVY else DamageElement.PHYSICAL_LIGHT
+    }
+
     private fun updateProjectiles(state: GameRunState, dt: Float): GameRunState {
         var s = state
         val remaining = mutableListOf<ActiveProjectile>()
+        val emotionMods = EmotionSystem.computeModifiers(s.emotionState)
 
         for (p0 in s.projectiles) {
             var p = p0.copy(lifeSec = p0.lifeSec - dt)
@@ -1567,7 +1746,8 @@ class GameEngine(
 
             p = p.copy(x = nx, y = ny, vx = vx, vy = vy, bouncesLeft = bouncesLeft)
 
-            val (hitInteractable, nextInteractableState) = InteractablesSystem.applyProjectileToInteractables(s, p, ::allocId, sfx, onDiscovery)
+            val crateBoostProj = if (p.fromPlayer && emotionMods.breakCratesOnShot) p.copy(damage = p.damage * 2.2f) else p
+            val (hitInteractable, nextInteractableState) = InteractablesSystem.applyProjectileToInteractables(s, crateBoostProj, ::allocId, sfx, onDiscovery)
             s = nextInteractableState
             if (hitInteractable) {
                 if (p.explosive) s = triggerMiniExplosion(s, p.x, p.y, p.damage * 0.7f)
@@ -1583,25 +1763,60 @@ class GameEngine(
             if (p.fromPlayer) {
                 var consumed = false
                 val shortRangeBonus = if (s.activeDefects.any { it.effects.shortRangeBonusDamage }) 1.22f else 1f
+                var blockedBanner: RunUiBanner? = null
                 val updatedEnemies = s.enemies.map { e ->
                     if (!consumed && e.id !in p.hitEnemyIds &&
                         hypot(e.x - p.x, e.y - p.y) <= e.radius + p.radius
                     ) {
-                        sfx.play(ToySfx.HIT_ENEMY)
-                        val dmg = p.damage * shortRangeBonus
-                        if (p.explosive) {
-                            s = triggerMiniExplosion(s, p.x, p.y, dmg * 0.7f)
-                        }
-                        if (p.pierceLeft > 0) {
-                            p = p.copy(pierceLeft = p.pierceLeft - 1, hitEnemyIds = p.hitEnemyIds + e.id)
-                        } else {
+                        if (!LightingSystem.isVeiledSpecterVulnerable(s, e)) {
+                            sfx.play(ToySfx.DODGE)
                             consumed = true
+                            if (s.activeBanner == null) {
+                                blockedBanner = RunUiBanner(
+                                    "Espectro Inmune a la Luz",
+                                    "Apaga tu luz o aléjalo de la lámpara para herirlo.",
+                                    0xFF9E64B5,
+                                    2.0f
+                                )
+                            }
+                            e
+                        } else {
+                            sfx.play(ToySfx.HIT_ENEMY)
+                            val baseDmg = p.damage * shortRangeBonus
+                            val elem = attackStyleToDamageElement(p.style, baseDmg)
+                            var finalDmg = EnemyRelationshipSystem.computeElementalDamage(baseDmg, elem, e.materialType)
+                            if (emotionMods.bleedOnHit) finalDmg += 2.5f
+
+                            val targetAfterArmor = if (e.type.isBoss) {
+                                val (bd, be, armorBlocked) = BossMechanicSystem.computeIncomingDamage(s, e, finalDmg, elem)
+                                finalDmg = bd
+                                if (armorBlocked && s.activeBanner == null) {
+                                    blockedBanner = RunUiBanner("¡Armadura Activa!", e.type.bossMechanicKind().hint, 0xFFE5A93B, 2.2f)
+                                }
+                                be
+                            } else e
+
+                            if (p.explosive) {
+                                s = triggerMiniExplosion(s, p.x, p.y, baseDmg * 0.7f)
+                            }
+                            if (p.pierceLeft > 0) {
+                                p = p.copy(pierceLeft = p.pierceLeft - 1, hitEnemyIds = p.hitEnemyIds + e.id)
+                            } else {
+                                consumed = true
+                            }
+                            targetAfterArmor.copy(
+                                hp = targetAfterArmor.hp - finalDmg,
+                                disguised = false,
+                                hitFlashTimer = 0.12f,
+                                alertState = EnemyAlertState.COMBAT,
+                                isSleeping = false
+                            )
                         }
-                        e.copy(hp = e.hp - dmg, disguised = false, hitFlashTimer = 0.12f)
                     } else e
                 }
                 s = s.copy(
                     enemies = updatedEnemies,
+                    activeBanner = blockedBanner ?: s.activeBanner,
                     particles = if (consumed) s.particles + spawnHitParticles(p.x, p.y, p.colorHex) else s.particles
                 )
                 if (!consumed) remaining.add(p)
@@ -1709,7 +1924,7 @@ class GameEngine(
         } else state.decoys
 
         val isDead = newHearts <= 0
-        return state.copy(
+        var damagedState = state.copy(
             hearts = newHearts,
             invulnTimer = 1.05f,
             screenShake = 14f,
@@ -1723,6 +1938,20 @@ class GameEngine(
             isActive = !isDead,
             particles = state.particles + spawnHitParticles(state.playerX, state.playerY, 0xFFF2EDE4)
         )
+        damagedState = ContractSystem.onPlayerDamaged(damagedState)
+        if (!isDead) {
+            val prevBanner = damagedState.activeBanner
+            damagedState = EmotionSystem.triggerEmotion(
+                damagedState,
+                if (newHearts <= 1) PatchEmotion.FEAR else PatchEmotion.ANGER,
+                24f,
+                20f
+            )
+            if (prevBanner != null && prevBanner != state.activeBanner) {
+                damagedState = damagedState.copy(activeBanner = prevBanner)
+            }
+        }
+        return damagedState
     }
 
     private fun handleEnemyKilled(state: GameRunState, enemy: ActiveEnemy): GameRunState {
@@ -1731,6 +1960,8 @@ class GameEngine(
             enemiesDefeatedCount = state.enemiesDefeatedCount + 1,
             particles = state.particles + spawnRingParticles(enemy.x, enemy.y, enemy.radius * 1.4f, 0xFFE8DCC4)
         )
+        s = ContractSystem.onEnemyKilled(s, enemy)
+        s = CompanionSystem.grantCompanionXp(s, if (enemy.type.isBoss) 4 else 1)
 
         if (s.activeSynergies.any { it.effectId == "kill_repair" }) {
             s = repairAllParts(s, 4)
@@ -1841,6 +2072,7 @@ class GameEngine(
                         if (s.hearts < s.maxHearts) {
                             sfx.play(ToySfx.PICKUP_ITEM)
                             s = s.copy(hearts = (s.hearts + 1).coerceAtMost(s.maxHearts))
+                            s = ContractSystem.onHeartPicked(s)
                         } else {
                             remainingPickups.add(updated)
                         }
@@ -1903,10 +2135,12 @@ class GameEngine(
                                 materials = matMap,
                                 activeBanner = RunUiBanner("Material de Taller", "+${updated.amount} ${mat.displayName}", 0xFF597354, 1.8f)
                             )
+                            s = ContractSystem.onMaterialOrItemCollected(s, updated.amount)
                         }
                     }
                     PickupKind.GEAR_TOKEN -> {
                         sfx.play(ToySfx.PICKUP_BUTTON)
+                        s = ContractSystem.onMaterialOrItemCollected(s, 1)
                         val obj = s.roomObjective
                         if (obj != null && obj.type == ObjectiveType.RECOVER_GEARS && !obj.completed) {
                             val nextCount = obj.currentCount + 1
@@ -1945,6 +2179,17 @@ class GameEngine(
                                 s = BackpackSystem.equipTier(s, tier, ::allocId, sfx, onUnlockBackpack)
                             }
                         }
+                    }
+                    PickupKind.LIGHT_SOURCE -> {
+                        val ls = runCatching { LightSourceType.valueOf(updated.valueStr) }.getOrNull()
+                        if (ls != null) {
+                            sfx.play(ToySfx.PICKUP_ITEM)
+                            s = LightingSystem.grantLightSource(s, ls)
+                        }
+                    }
+                    PickupKind.LOST_TOY_TOKEN -> {
+                        sfx.play(ToySfx.PICKUP_ITEM)
+                        s = LabyrinthSystem.onLostToyCollected(s)
                     }
                 }
             } else {
@@ -2096,6 +2341,7 @@ class GameEngine(
                 toyboxMemory = mem,
                 doorMapping = Direction.entries.associateWith { it }
             )
+            s = ContractSystem.onRoomCleared(s, s.damagedInCurrentRoom)
         }
 
         // Check Trapdoor to Next Floor or Victory!
@@ -2169,7 +2415,9 @@ class GameEngine(
             roomAnomalies = state.roomAnomalies,
             roomObjective = state.roomObjective,
             manufacturerNpc = state.manufacturerNpc,
-            alarmBellPos = state.alarmBellPos
+            alarmBellPos = state.alarmBellPos,
+            roomLamps = state.roomLamps,
+            labyrinthState = state.labyrinthState
         )
         var s = state.copy(
             savedRoomsByCoord = state.savedRoomsByCoord + (state.currentCoord to leavingSnapshot)
@@ -2345,6 +2593,8 @@ class GameEngine(
         var finalEnemies: List<ActiveEnemy>
         val bellPos: Pair<Float, Float>?
         val npcState: ManufacturerNpcState?
+        val roomLamps: List<RoomLampProp>
+        var bossArenaProps: List<BossArenaProp> = emptyList()
         var cageBanner = nextState.activeBanner
 
         if (savedTarget != null) {
@@ -2355,13 +2605,16 @@ class GameEngine(
             finalEnemies = nextState.enemies
             bellPos = savedTarget.alarmBellPos
             npcState = savedTarget.manufacturerNpc
+            roomLamps = savedTarget.roomLamps.ifEmpty { LightingSystem.generateRoomLamps(curRoomResolved, ::allocId) }
         } else {
             objective = if (!wasVisited && !curRoomResolved.cleared) {
                 RoomObjectiveSystem.maybeGenerateObjective(curRoomResolved.type, curRoomResolved.mechanic, nextState.floorNumber)
             } else null
             objPickups = RoomObjectiveSystem.initPickupsForObjective(objective, curRoomResolved.obstacles, ::allocId)
             finalInteractables = if (!wasVisited) {
-                InteractablesSystem.generateForRoom(curRoomResolved.type, nextState.floorNumber, curRoomResolved.obstacles, objective, ::allocId)
+                InteractablesSystem.generateForRoom(
+                    curRoomResolved.type, nextState.floorNumber, curRoomResolved.obstacles, objective, ::allocId, lightingMode = curRoomResolved.lightingMode
+                )
             } else {
                 emptyList()
             }
@@ -2369,10 +2622,12 @@ class GameEngine(
             val (relEnemies, generatedBellPos) = EnemyRelationshipSystem.initializeRoomRelationships(
                 nextState.enemies,
                 hasBell = !wasVisited && curRoomResolved.type == RoomType.COMBAT && Random.nextFloat() < 0.25f,
-                defeatedCaptainsCount = nextState.defeatedCaptainsCount
+                defeatedCaptainsCount = nextState.defeatedCaptainsCount,
+                scenario = curRoomResolved.emergentScenario
             )
             finalEnemies = relEnemies
             bellPos = generatedBellPos
+            roomLamps = LightingSystem.generateRoomLamps(curRoomResolved, ::allocId)
             npcState = if (ManufacturerSystem.shouldSpawnNpcInRoom(curRoomResolved, nextState)) {
                 ManufacturerNpcState(x = ARENA_W * 0.5f, y = ARENA_H * 0.36f, present = true)
             } else null
@@ -2386,13 +2641,14 @@ class GameEngine(
                 }
             }
 
-            // Random Companion Cage guarded by protector enemies in combat/challenge/curse/forbidden rooms
-            val cageChance = if (nextState.activeCompanions.isEmpty() && nextState.roomsClearedCount >= 1) 0.42f else 0.26f
+            // Random Companion Cage guarded by protector enemies (guaranteed when TRAPPED_ALLY scenario)
+            val baseCageChance = if (nextState.activeCompanions.isEmpty() && nextState.roomsClearedCount >= 1) 0.42f else 0.26f
+            val forceTrappedAlly = curRoomResolved.emergentScenario == EmergentRoomScenario.TRAPPED_ALLY
             if (!wasVisited && !curRoomResolved.cleared &&
                 curRoomResolved.type in setOf(RoomType.COMBAT, RoomType.CHALLENGE, RoomType.CURSE, RoomType.FORBIDDEN) &&
                 finalEnemies.isNotEmpty() && nextState.activeCompanions.size < 2 &&
                 finalInteractables.none { it.type == InteractableType.COMPANION_CAGE } &&
-                Random.nextFloat() < cageChance
+                (forceTrappedAlly || Random.nextFloat() < baseCageChance)
             ) {
                 val compPool = CompanionId.entries.filter { id ->
                     nextState.activeCompanions.none { it.id == id } && id !in nextState.pendingGrudgeCompanions
@@ -2447,6 +2703,16 @@ class GameEngine(
             }
         }
 
+        // Initialize Boss Arena Mechanics & 3-Phase Boss Properties when boss is present
+        val bossIdx = finalEnemies.indexOfFirst { it.type.isBoss && it.hp > 0f }
+        if (bossIdx != -1) {
+            val (initBoss, props) = BossMechanicSystem.initBossArena(finalEnemies[bossIdx], ::allocId)
+            val mutEnemies = finalEnemies.toMutableList()
+            mutEnemies[bossIdx] = initBoss
+            finalEnemies = mutEnemies
+            bossArenaProps = props
+        }
+
         val nextLoreRoom = if (curRoomResolved.type == RoomType.LORE) {
             nextState.loreRoomsByCoord[targetCoord]
                 ?: LoreRoomSystem.generateForRoom(nextState.floorNumber, targetCoord, curRoomResolved.obstacles, ::allocId)
@@ -2458,14 +2724,19 @@ class GameEngine(
             roomObjective = objective,
             roomInteractables = finalInteractables,
             roomAnomalies = anomalies,
+            roomLamps = roomLamps,
+            bossArenaProps = bossArenaProps,
             pickups = nextState.pickups + objPickups,
             manufacturerNpc = npcState,
             loreRoom = nextLoreRoom,
             loreRoomsByCoord = if (nextLoreRoom != null) nextState.loreRoomsByCoord + (targetCoord to nextLoreRoom) else nextState.loreRoomsByCoord,
             activeBanner = if (nextLoreRoom != null && !wasVisited) {
                 RunUiBanner("${nextLoreRoom.loreRoomType.displayName}: ${nextLoreRoom.title}", nextLoreRoom.hintSummary, nextLoreRoom.loreRoomType.badgeColorHex, 3.6f)
+            } else if (!wasVisited && curRoomResolved.emergentScenario != EmergentRoomScenario.STANDARD && curRoomResolved.emergentScenario.hint.isNotEmpty() && cageBanner == s.activeBanner) {
+                RunUiBanner(curRoomResolved.emergentScenario.displayName, curRoomResolved.emergentScenario.hint, 0xFFC89948, 2.8f)
             } else cageBanner
         )
+        nextState = LabyrinthSystem.initLabyrinthRoom(nextState, curRoomResolved, ::allocId)
         nextState = ManufacturerSystem.tickClosedMysteryBoxOnRoomEnter(nextState, ::allocId, sfx)
         nextState = RoomMechanicSystem.initForRoom(nextState, curRoomResolved)
         nextState = CompanionSystem.onEnterRoomCompanions(nextState, curRoomResolved, ::allocId, sfx, wasVisited = wasVisited)
@@ -2504,7 +2775,7 @@ class GameEngine(
         if (state.activeDefects.any { it.severity >= 3 }) onAchievement("ach_severe_defect")
         if (state.difficulty == Difficulty.PESADILLA) onAchievement("ach_nightmare_floor")
 
-        if (state.floorNumber >= 6) {
+        if (state.floorNumber >= 8) {
             onAchievement("ach_win_run")
             if (state.character.id == CharacterId.PATCH) onAchievement("ach_patch_win")
             return state.copy(isVictory = true, isActive = false)
@@ -2524,6 +2795,12 @@ class GameEngine(
         val startRoom = nextDungeon.rooms[nextDungeon.startCoord]!!
         sfx.play(ToySfx.SYNERGY)
 
+        val nextStartInteractables = InteractablesSystem.generateForRoom(
+            RoomType.START, nextFloorNum, startRoom.obstacles, null, ::allocId, lightingMode = startRoom.lightingMode
+        )
+        val nextStartLamps = LightingSystem.generateRoomLamps(startRoom, ::allocId)
+        val nextContracts = ContractSystem.generateBoardContracts(nextFloorNum)
+
         val nextFloorState = state.copy(
             floorNumber = nextFloorNum,
             floorTheme = theme,
@@ -2536,7 +2813,12 @@ class GameEngine(
             projectiles = emptyList(),
             pickups = emptyList(),
             bombs = emptyList(),
-            roomInteractables = emptyList(),
+            roomInteractables = nextStartInteractables,
+            roomLamps = nextStartLamps,
+            labyrinthState = null,
+            bossArenaProps = emptyList(),
+            availableContracts = nextContracts,
+            contractBoardOpen = false,
             roomObjective = null,
             roomAnomalies = emptyList(),
             manufacturerNpc = null,
@@ -2612,6 +2894,13 @@ class GameEngine(
                     s = BackpackSystem.equipTier(s, tier, ::allocId, sfx, onUnlockBackpack)
                 }
             }
+            offer.itemId != null && offer.itemId.startsWith("light:") -> {
+                val ls = runCatching { LightSourceType.valueOf(offer.itemId.removePrefix("light:")) }.getOrNull()
+                if (ls != null) {
+                    sfx.play(ToySfx.PICKUP_ITEM)
+                    s = LightingSystem.grantLightSource(s, ls)
+                }
+            }
             offer.itemId != null -> {
                 GameCatalog.itemById(offer.itemId)?.let { item ->
                     s = acquirePassiveItem(s, item)
@@ -2625,12 +2914,13 @@ class GameEngine(
         if (zone == null) {
             if (state.buttons < repairAllCost) return state
             sfx.play(ToySfx.REPAIR_STITCH)
-            return repairAllParts(state, 50).copy(
+            val next = repairAllParts(state, 50).copy(
                 buttons = state.buttons - repairAllCost,
                 usedAnyRepair = true,
                 repairBenchOpen = false,
                 activeBanner = RunUiBanner("Mesa de Costura", "Todas tus piezas han sido cosidas (+50).", 0xFF597354, 2.2f)
             )
+            return ContractSystem.onRepairDone(next, viaBench = true)
         } else {
             val part = state.equippedParts[zone] ?: return state
             val cost = 2
@@ -2638,12 +2928,13 @@ class GameEngine(
             val map = state.equippedParts.toMutableMap()
             map[zone] = part.copy(isDetached = false, durability = part.def.maxDurability)
             sfx.play(ToySfx.REPAIR_STITCH)
-            return state.copy(
+            val next = state.copy(
                 buttons = state.buttons - cost,
                 equippedParts = map,
                 usedAnyRepair = true,
                 activeBanner = RunUiBanner("Pieza Restaurada", "${part.def.name} al 100%.", 0xFF597354, 2.0f)
             )
+            return ContractSystem.onRepairDone(next, viaBench = true)
         }
     }
 
@@ -2789,7 +3080,7 @@ class GameEngine(
             return state.copy(manufacturerEncounter = ManufacturerSystem.buildEncounter(state))
         }
         PuzzleInteractionSystem.findNearbyLorePrompt(state)?.let { (prop, _) ->
-            return PuzzleInteractionSystem.interactLoreProp(
+            val after = PuzzleInteractionSystem.interactLoreProp(
                 state = state,
                 propId = prop.id,
                 allocId = ::allocId,
@@ -2798,9 +3089,15 @@ class GameEngine(
                 onAchievement = onAchievement,
                 onLorePuzzleSolved = onLorePuzzleSolved
             )
+            return if (after.lorePuzzlesSolvedThisRun > state.lorePuzzlesSolvedThisRun || after.pendingArchiveDiscovery != null) {
+                EmotionSystem.triggerEmotion(ContractSystem.onRelicOrClueFound(after), PatchEmotion.CURIOSITY, 24f, 20f)
+            } else after
         }
         SecretDiscoverySystem.findNearbyAnomalyPrompt(state)?.let { (anom, _) ->
-            return SecretDiscoverySystem.interactWithAnomaly(state, anom.id, ::allocId, sfx, onDiscovery)
+            val after = SecretDiscoverySystem.interactWithAnomaly(state, anom.id, ::allocId, sfx, onDiscovery)
+            return if (after.roomAnomalies.count { it.resolved } > state.roomAnomalies.count { it.resolved }) {
+                EmotionSystem.triggerEmotion(ContractSystem.onRelicOrClueFound(after), PatchEmotion.CURIOSITY, 24f, 20f)
+            } else after
         }
         val (handledObj, objState) = RoomObjectiveSystem.tryInteractObjective(state, ::allocId, sfx)
         if (handledObj) return objState
@@ -2860,4 +3157,16 @@ class GameEngine(
     fun dismissArchiveDiscovery(state: GameRunState): GameRunState {
         return state.copy(pendingArchiveDiscovery = null)
     }
+
+    fun toggleLight(state: GameRunState): GameRunState = LightingSystem.toggleLight(state)
+
+    fun cycleLightSource(state: GameRunState): GameRunState = LightingSystem.cycleLightSource(state)
+
+    fun openContractBoard(state: GameRunState): GameRunState = state.copy(contractBoardOpen = true)
+
+    fun closeContractBoard(state: GameRunState): GameRunState = state.copy(contractBoardOpen = false)
+
+    fun acceptContract(state: GameRunState, def: ContractDef): GameRunState = ContractSystem.acceptContract(state, def)
+
+    fun abandonContract(state: GameRunState, contractId: String): GameRunState = ContractSystem.abandonContract(state, contractId)
 }

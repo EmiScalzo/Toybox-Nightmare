@@ -263,6 +263,7 @@ enum class RoomType(val displayName: String, val symbol: String) {
     MANUFACTURER("Sala del Fabricante", "⚙"),
     FORBIDDEN("Sala Prohibida", "☣"),
     LORE("Sala de Memoria", "❦"),
+    LABYRINTH("Laberinto", "⌗"),
     BOSS("Jefe del Piso", "♛")
 }
 
@@ -275,37 +276,42 @@ enum class EnemyType(
     val isBoss: Boolean = false,
     val description: String
 ) {
-    TIN_SOLDIER("Soldadito de Plomo", 28f, 75f, false, "Marcha en línea y dispara perdigones de latón."),
-    CREEPY_DOLL("La Muñeca", 24f, 118f, false, "Finge ser un adorno hasta que te acercas."),
-    PLUSH_BEAR("Osito de Felpa", 52f, 62f, false, "Resistente. Telegrafía embestidas pesadas."),
-    JACK_IN_BOX("Jack Sorpresa", 32f, 48f, false, "Emerge de su caja lanzando ráfagas radiales."),
-    CLOCKWORK_SPIDER("Araña de Cuerda", 20f, 138f, false, "Se desliza por muros y salta hacia ti."),
-    MIRROR_DOLL("Muñeco Espejo", 34f, 95f, false, "Imita tus movimientos con inquietante precisión."),
-    THIEF_GREMLIN("Duende Ladrón", 26f, 132f, false, "Persigue piezas corporales caídas o bombas para robarlas."),
-    MIMIC_CHEST("Cofre Imitador", 46f, 90f, false, "Se oculta como recompensa hasta despertar."),
-    PORCELAIN_CLOWN("Payaso de Porcelana", 38f, 82f, false, "Salta erráticamente y lanza ráfagas triples de cascabeles."),
-    WINDUP_CHOMPER("Dentadura de Cuerda", 22f, 148f, false, "Mandíbula mecánica veloz que avanza a dentelladas."),
-    NEEDLE_MARIONETTE("Marioneta de Agujas", 30f, 88f, false, "Mantiene distancia y dispara agujas afiladas en abanico."),
-    SHADOW_PUPPET("Sombra Cosida", 26f, 125f, false, "Se desliza entre las sombras y aparece cerca de ti."),
-    RUSTY_TIN_KNIGHT("Caballero Oxidado", 68f, 54f, false, "Blindado y pesado; avanza firme disparando pernos."),
-    RAG_BOMBER("Muñeco Pirotécnico", 34f, 76f, false, "Cargado de pólvora; detona en un estallido al caer."),
-    BETRAYED_BUNNY("Conejito Traicionado", 48f, 134f, false, "Antiguo compañero abandonado. Regresó en otra partida para cobrarse botones y rencor."),
-    MIRROR_COPY("Reflejo Invertido", 30f, 112f, false, "Copia nacida de los espejos que imita tu movimiento y devuelve disparos."),
-    WEEPING_TOY("Estatuilla Inmóvil", 38f, 178f, false, "Se congela cuando la miras directamente, pero se abalanza al darle la espalda."),
-    TIN_CAPTAIN("Capitán de Plomo", 56f, 68f, false, "Líder táctico: coordina a los soldaditos; si cae, su escuadrón se desorganiza."),
-    BODYGUARD_BEAR("Osito Guardaespaldas", 62f, 80f, false, "Protector: intercepta disparos frente a aliados frágiles y enfurece si caen."),
-    CLOCKWORK_COURIER("Conejo de Cuerda", 24f, 146f, false, "Cobarde: huye hacia la campana de alarma para atraer refuerzos."),
-    STITCH_MECHANIC("Costurero Reparador", 32f, 92f, false, "Reparador: acude a curar enemigos dañados si no lo detienes."),
-    BOSS_VENDEDOR("El Vendedor", 240f, 72f, true, "Piso 1: Lanza juguetes armados y reordena cajas de exhibición."),
-    BOSS_BOTONERO("El Botonero", 265f, 80f, true, "Piso 1: Dispara salvas de botones dorados en cruz."),
-    BOSS_COSTURERA("La Costurera", 320f, 84f, true, "Piso 2: Teje hilos tensos que restringen el movimiento."),
-    BOSS_TITIRITERO("El Titiritero", 340f, 76f, true, "Piso 2: Maneja marionetas de agujas y ráfagas diagonales."),
-    BOSS_NINERA("La Niñera", 400f, 78f, true, "Piso 3: Invoca muñecos y coordina oleadas."),
-    BOSS_RELOJERO("El Relojero", 420f, 88f, true, "Piso 3: Lanza espirales horarias y dentaduras de cuerda."),
-    BOSS_MAESTRO("El Maestro de Ceremonias", 480f, 92f, true, "Piso 4: Convierte el suelo en un carrusel letal."),
-    BOSS_BUHONERO("El Buhonero Sombrío", 510f, 94f, true, "Piso 4: Arroja proyectiles explosivos y sombras veloces."),
-    BOSS_COLECCIONISTA("El Coleccionista", 560f, 86f, true, "Piso 5: Usa piezas robadas de otros juguetes."),
-    BOSS_MADRE("La Madre de los Juguetes", 700f, 82f, true, "Piso 6: Núcleo de Wonderland. Altera las reglas del combate.")
+    TIN_SOLDIER("Soldadito de Plomo", 34f, 75f, false, "Patrulla en guardia y dispara perdigones de latón."),
+    CREEPY_DOLL("La Muñeca", 30f, 118f, false, "Permanece inmóvil como adorno hasta que te acercas."),
+    PLUSH_BEAR("Osito de Felpa", 92f, 62f, false, "Resistente. Telegrafía embestidas pesadas."),
+    JACK_IN_BOX("Jack Sorpresa", 48f, 48f, false, "Emerge de su caja lanzando ráfagas radiales."),
+    CLOCKWORK_SPIDER("Araña de Cuerda", 22f, 138f, false, "Muy ágil; se desliza por muros y busca sombra."),
+    MIRROR_DOLL("Muñeco Espejo", 54f, 95f, false, "Imita tus movimientos con inquietante precisión."),
+    THIEF_GREMLIN("Duende Ladrón", 34f, 134f, false, "Recoge objetos y piezas caídas del suelo para huir con ellos."),
+    MIMIC_CHEST("Cofre Imitador", 68f, 90f, false, "Se camufla entre muebles hasta despertar."),
+    PORCELAIN_CLOWN("Payaso de Porcelana", 58f, 84f, false, "Ríe y asusta a juguetes cercanos; lanza cascabeles triples."),
+    WINDUP_CHOMPER("Dentadura de Cuerda", 24f, 148f, false, "Mandíbula mecánica veloz de vida muy frágil."),
+    NEEDLE_MARIONETTE("Marioneta de Agujas", 42f, 88f, false, "Mantiene distancia y dispara agujas cortantes."),
+    SHADOW_PUPPET("Sombra Cosida", 40f, 125f, false, "Invisible en penumbra salvo por su silueta hasta ser iluminada."),
+    RUSTY_TIN_KNIGHT("Caballero Oxidado", 118f, 54f, false, "Blindado y pesado; resiste balas ligeras pero teme electricidad."),
+    RAG_BOMBER("Muñeco Pirotécnico", 46f, 76f, false, "Cargado de pólvora; detona en un estallido al caer."),
+    BETRAYED_BUNNY("Conejito Traicionado", 74f, 134f, false, "Antiguo compañero abandonado que regresa por venganza."),
+    MIRROR_COPY("Reflejo Invertido", 44f, 112f, false, "Copia nacida de los espejos que imita tu movimiento."),
+    WEEPING_TOY("Estatuilla Inmóvil", 64f, 178f, false, "Se congela cuando la miras o la iluminas; ataca por la espalda."),
+    TIN_CAPTAIN("Capitán de Plomo", 115f, 68f, false, "Líder táctico: coordina soldaditos; si cae, su escuadrón pierde orden."),
+    BODYGUARD_BEAR("Osito Guardaespaldas", 125f, 80f, false, "Protector: intercepta disparos frente a aliados frágiles y enfurece si caen."),
+    CLOCKWORK_COURIER("Conejo de Cuerda", 28f, 146f, false, "Cobarde: huye buscando refugio o la campana de alarma."),
+    STITCH_MECHANIC("Costurero Reparador", 42f, 92f, false, "Reparador: cura enemigos heridos si no lo detienes."),
+    VEILED_SPECTER("Espectro Velado", 76f, 96f, false, "Invulnerable bajo la luz directa; apaga tu fuente de luz para dañarlo."),
+    LAMP_SNUFFER("Apagalámparas", 36f, 130f, false, "Saboteador rápido que busca apagar las lámparas de la sala."),
+    CLOCKWORK_SENTINEL("Centinela de Cuerda", 175f, 64f, false, "Élite acorazado; vigila zonas clave y busca recargarse en estaciones."),
+    BOSS_VENDEDOR("El Vendedor", 520f, 72f, true, "Piso 1: Oso de Cuerda acorazado; sobrecárgalo para exponer su núcleo."),
+    BOSS_BOTONERO("El Botonero", 560f, 80f, true, "Piso 1: Maestro de salvas doradas con coraza de latón."),
+    BOSS_COSTURERA("La Costurera", 640f, 84f, true, "Piso 2: Blindada en porcelana y acero; rompe su armadura por fases."),
+    BOSS_TITIRITERO("El Titiritero", 680f, 76f, true, "Piso 2 y 5: Invulnerable mientras sus hilos estén anclados a marionetas."),
+    BOSS_NINERA("La Niñera", 760f, 78f, true, "Piso 3: Vigila la oscuridad del Dormitorio con blindaje de porcelana."),
+    BOSS_RELOJERO("El Relojero", 800f, 88f, true, "Piso 3: Circula en rieles horarios; acciona el freno para descarrilarlo."),
+    BOSS_MAESTRO("El Maestro de Ceremonias", 860f, 92f, true, "Piso 4 y 5: Se oculta entre cajas sorpresa en el escenario."),
+    BOSS_BUHONERO("El Buhonero Sombrío", 900f, 94f, true, "Piso 4: Maestro de trampas y sombras en el Depósito."),
+    BOSS_COLECCIONISTA("El Coleccionista", 960f, 86f, true, "Piso 6: Custodia vitrinas del Museo bajo coraza de porcelana."),
+    BOSS_SUBSUELO("El Autómata Ahogado", 1040f, 84f, true, "Piso 7: Locomotora oxidada sobre rieles electrificados del Subsuelo."),
+    BOSS_MADRE("La Madre de los Juguetes", 1120f, 82f, true, "Piso 8: Despliega hilos y cambia las reglas de Wonderland."),
+    BOSS_FABRICANTE("El Fabricante", 1180f, 88f, true, "Piso 8: Creador de Wonderland. Su taller responde a cada fase suya.")
 }
 
 enum class CompanionId(
@@ -397,7 +403,8 @@ data class FloorTheme(
     val floorColorHex: Long,
     val wallColorHex: Long,
     val ambientTintHex: Long,
-    val altBossType: EnemyType? = null
+    val altBossType: EnemyType? = null,
+    val visualProfile: FloorVisualProfile? = null
 )
 
 enum class AchievementCategory(val displayName: String) {
@@ -443,23 +450,68 @@ data class MemoryFragmentDef(
 )
 
 fun EnemyType.defaultRole(): EnemyRole = when (this) {
-    EnemyType.TIN_CAPTAIN -> EnemyRole.LEADER
-    EnemyType.BODYGUARD_BEAR -> EnemyRole.PROTECTOR
+    EnemyType.TIN_CAPTAIN, EnemyType.CLOCKWORK_SENTINEL -> EnemyRole.LEADER
+    EnemyType.BODYGUARD_BEAR, EnemyType.PLUSH_BEAR, EnemyType.RUSTY_TIN_KNIGHT -> EnemyRole.PROTECTOR
     EnemyType.CLOCKWORK_COURIER -> EnemyRole.COWARD
     EnemyType.THIEF_GREMLIN -> EnemyRole.COLLECTOR
     EnemyType.STITCH_MECHANIC -> EnemyRole.REPAIRER
-    EnemyType.PLUSH_BEAR, EnemyType.RUSTY_TIN_KNIGHT -> EnemyRole.PROTECTOR
+    EnemyType.PORCELAIN_CLOWN -> EnemyRole.RIVAL
     else -> EnemyRole.STANDARD
 }
 
 fun EnemyType.defaultFaction(): EnemyFaction = when (this) {
     EnemyType.TIN_SOLDIER, EnemyType.TIN_CAPTAIN, EnemyType.RUSTY_TIN_KNIGHT,
-    EnemyType.CLOCKWORK_SPIDER, EnemyType.WINDUP_CHOMPER, EnemyType.CLOCKWORK_COURIER -> EnemyFaction.TIN_ARMY
+    EnemyType.CLOCKWORK_SPIDER, EnemyType.WINDUP_CHOMPER, EnemyType.CLOCKWORK_COURIER,
+    EnemyType.CLOCKWORK_SENTINEL -> EnemyFaction.TIN_ARMY
     EnemyType.PLUSH_BEAR, EnemyType.BODYGUARD_BEAR, EnemyType.RAG_BOMBER,
     EnemyType.BETRAYED_BUNNY, EnemyType.THIEF_GREMLIN, EnemyType.STITCH_MECHANIC -> EnemyFaction.RAG_PLUSH
     EnemyType.CREEPY_DOLL, EnemyType.MIRROR_DOLL, EnemyType.PORCELAIN_CLOWN,
     EnemyType.NEEDLE_MARIONETTE, EnemyType.WEEPING_TOY, EnemyType.JACK_IN_BOX -> EnemyFaction.PORCELAIN
-    EnemyType.SHADOW_PUPPET, EnemyType.MIRROR_COPY, EnemyType.MIMIC_CHEST -> EnemyFaction.VOID_SHADOW
+    EnemyType.SHADOW_PUPPET, EnemyType.MIRROR_COPY, EnemyType.MIMIC_CHEST,
+    EnemyType.VEILED_SPECTER, EnemyType.LAMP_SNUFFER -> EnemyFaction.VOID_SHADOW
     else -> EnemyFaction.VOID_SHADOW
 }
+
+fun EnemyType.materialType(): EnemyMaterialType = when (this) {
+    EnemyType.CREEPY_DOLL, EnemyType.PORCELAIN_CLOWN, EnemyType.MIRROR_DOLL,
+    EnemyType.WEEPING_TOY, EnemyType.BOSS_COSTURERA, EnemyType.BOSS_NINERA,
+    EnemyType.BOSS_COLECCIONISTA -> EnemyMaterialType.PORCELAIN
+    EnemyType.PLUSH_BEAR, EnemyType.BODYGUARD_BEAR, EnemyType.RAG_BOMBER,
+    EnemyType.THIEF_GREMLIN, EnemyType.STITCH_MECHANIC, EnemyType.BETRAYED_BUNNY -> EnemyMaterialType.CLOTH
+    EnemyType.TIN_SOLDIER, EnemyType.TIN_CAPTAIN, EnemyType.RUSTY_TIN_KNIGHT,
+    EnemyType.BOSS_BOTONERO, EnemyType.BOSS_SUBSUELO -> EnemyMaterialType.METAL
+    EnemyType.JACK_IN_BOX, EnemyType.MIMIC_CHEST, EnemyType.BOSS_VENDEDOR -> EnemyMaterialType.WOOD
+    EnemyType.LAMP_SNUFFER, EnemyType.SHADOW_PUPPET, EnemyType.VEILED_SPECTER -> EnemyMaterialType.RUBBER
+    else -> EnemyMaterialType.MECHANISM
+}
+
+fun EnemyType.darknessTrait(): DarknessEnemyTrait = when (this) {
+    EnemyType.WEEPING_TOY -> DarknessEnemyTrait.MOVE_ONLY_IN_DARK
+    EnemyType.CLOCKWORK_SPIDER, EnemyType.CLOCKWORK_COURIER -> DarknessEnemyTrait.FLEE_LIGHT
+    EnemyType.SHADOW_PUPPET, EnemyType.MIRROR_COPY -> DarknessEnemyTrait.SHADOW_INVISIBLE
+    EnemyType.CREEPY_DOLL, EnemyType.MIMIC_CHEST -> DarknessEnemyTrait.FURNITURE_CAMOUFLAGE
+    EnemyType.LAMP_SNUFFER -> DarknessEnemyTrait.LAMP_EXTINGUISHER
+    EnemyType.VEILED_SPECTER -> DarknessEnemyTrait.LIGHT_INVULNERABLE
+    else -> DarknessEnemyTrait.NONE
+}
+
+fun EnemyType.hpTier(): EnemyHpTier = when {
+    isBoss -> EnemyHpTier.BOSS
+    maxHp <= 25f -> EnemyHpTier.VERY_WEAK
+    maxHp <= 45f -> EnemyHpTier.WEAK
+    maxHp <= 80f -> EnemyHpTier.NORMAL
+    maxHp <= 140f -> EnemyHpTier.RESISTANT
+    maxHp <= 230f -> EnemyHpTier.ELITE
+    else -> EnemyHpTier.MINIBOSS
+}
+
+fun EnemyType.bossMechanicKind(): BossMechanicKind = when (this) {
+    EnemyType.BOSS_VENDEDOR, EnemyType.BOSS_BOTONERO -> BossMechanicKind.WINDUP_SHELL
+    EnemyType.BOSS_COSTURERA, EnemyType.BOSS_NINERA, EnemyType.BOSS_COLECCIONISTA -> BossMechanicKind.PORCELAIN_ARMOR
+    EnemyType.BOSS_MAESTRO, EnemyType.BOSS_BUHONERO -> BossMechanicKind.SURPRISE_BOXES
+    EnemyType.BOSS_TITIRITERO, EnemyType.BOSS_MADRE, EnemyType.BOSS_FABRICANTE -> BossMechanicKind.PUPPET_STRINGS
+    EnemyType.BOSS_RELOJERO, EnemyType.BOSS_SUBSUELO -> BossMechanicKind.RAIL_TRAIN
+    else -> BossMechanicKind.WINDUP_SHELL
+}
+
 

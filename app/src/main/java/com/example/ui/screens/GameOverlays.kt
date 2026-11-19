@@ -40,7 +40,11 @@ import com.example.data.model.BackpackTier
 import com.example.data.model.BodyZone
 import com.example.data.model.CompanionId
 import com.example.data.model.ConsumableType
+import com.example.data.model.ContractDef
+import com.example.data.model.ContractRestriction
+import com.example.data.model.LightSourceType
 import com.example.data.model.ManufacturerEncounter
+import com.example.data.model.PatchEmotion
 import com.example.data.model.PendingArchiveDiscovery
 import com.example.data.model.RepairActionMode
 import com.example.data.model.RepairMaterial
@@ -370,6 +374,10 @@ fun ShopDialog(
                     offer.itemId?.startsWith("backpack_tier:") == true -> {
                         val bt = runCatching { BackpackTier.valueOf(offer.itemId.removePrefix("backpack_tier:")) }.getOrNull()
                         bt?.let { PixelArtSprites.forBackpackTier(it) }
+                    }
+                    offer.itemId?.startsWith("light:") == true -> {
+                        val lt = runCatching { LightSourceType.valueOf(offer.itemId.removePrefix("light:")) }.getOrNull()
+                        lt?.let { PixelArtSprites.forLightSource(it) }
                     }
                     offer.itemId != null -> PixelArtSprites.forPassiveItem(offer.itemId)
                     else -> null
@@ -1183,6 +1191,13 @@ fun PauseOverlayDialog(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text("COMPAÑEROS ACTIVOS (${state.activeCompanions.size}/2)", style = MaterialTheme.typography.labelLarge, color = TarnishedBrass)
+                        state.activeCompanionSynergyTitle?.let { synTitle ->
+                            Text(
+                                text = "★ Sinergia de Dúo: $synTitle",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = AmberWarning
+                            )
+                        }
                         if (state.activeCompanions.isEmpty()) {
                             Text("Ningún juguete te acompaña todavía.", style = MaterialTheme.typography.bodyMedium, color = ParchmentDark)
                         } else {
@@ -1209,7 +1224,12 @@ fun PauseOverlayDialog(
                                         modifier = Modifier.size(28.dp).padding(end = 8.dp)
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("${comp.id.displayName} ($status)", style = MaterialTheme.typography.titleMedium, color = AgedIvory)
+                                        val xpLabel = if (comp.evolved) {
+                                            "★ ${comp.evolvedTitle ?: "Evolucionado"}"
+                                        } else {
+                                            "XP ${comp.xp}/8"
+                                        }
+                                        Text("${comp.id.displayName} ($status • $xpLabel)", style = MaterialTheme.typography.titleMedium, color = AgedIvory)
                                         Text(comp.id.conditionDesc, style = MaterialTheme.typography.bodyMedium, color = ParchmentDark)
                                     }
                                 }
@@ -1585,3 +1605,269 @@ fun ArchiveDiscoveryDialog(
         }
     }
 }
+
+@Composable
+fun ContractBoardDialog(
+    state: GameRunState,
+    onAccept: (ContractDef) -> Unit,
+    onAbandon: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    val openActive = state.activeContracts.filter { !it.completed && !it.failed }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CharcoalBlack.copy(alpha = 0.88f))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        ToyboxFrameCard(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 470.dp).heightIn(max = 650.dp),
+            borderColor = TarnishedBrass
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("TABLÓN DE CONTRATOS", style = MaterialTheme.typography.headlineMedium, color = TarnishedBrass)
+                Text("${openActive.size}/2 activos", style = MaterialTheme.typography.labelLarge, color = AgedIvory)
+            }
+            Text(
+                text = "Acepta encargos opcionales para ganar botones, luz y suministros. Algunos contratos son incompatibles entre sí.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Parchment
+            )
+            StitchedDivider(Modifier.padding(vertical = 8.dp))
+
+            Column(
+                modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (state.activeContracts.isNotEmpty()) {
+                    Text("TUS ENCARGOS ACTUALES", style = MaterialTheme.typography.labelLarge, color = AgedIvory)
+                    state.activeContracts.forEach { c ->
+                        val statusCol = when {
+                            c.completed -> MutedMoss
+                            c.failed -> CrimsonBright
+                            else -> TarnishedBrass
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(CharcoalBlack.copy(alpha = 0.72f), CutCornerShape(4.dp))
+                                .border(1.2.dp, statusCol, CutCornerShape(4.dp))
+                                .padding(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(c.def.title, style = MaterialTheme.typography.titleMedium, color = AgedIvory, modifier = Modifier.weight(1f))
+                                Text(
+                                    text = when {
+                                        c.completed -> "CUMPLIDO ✓"
+                                        c.failed -> "FALLIDO ✗"
+                                        else -> "${c.progress}/${c.def.targetCount}"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = statusCol
+                                )
+                            }
+                            Text(c.def.description, style = MaterialTheme.typography.bodySmall, color = Parchment)
+                            if (c.def.restriction != ContractRestriction.NONE) {
+                                Text("Restricción: ${c.def.restriction.label}", style = MaterialTheme.typography.labelSmall, color = AmberWarning)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Recompensa: ${c.def.rewardDesc}", style = MaterialTheme.typography.labelSmall, color = MutedMoss, modifier = Modifier.weight(1f))
+                                TextButton(
+                                    onClick = { onAbandon(c.def.id) },
+                                    modifier = Modifier
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .testTag("contract_abandon_${c.def.id}")
+                                ) {
+                                    Text(if (c.completed || c.failed) "Archivar" else "Abandonar", style = MaterialTheme.typography.labelMedium, color = CrimsonBright)
+                                }
+                            }
+                        }
+                    }
+                    StitchedDivider(Modifier.padding(vertical = 4.dp))
+                }
+
+                Text("CONTRATOS DISPONIBLES EN PISO ${state.floorNumber}", style = MaterialTheme.typography.labelLarge, color = TarnishedBrass)
+                state.availableContracts.forEach { def ->
+                    val alreadyTaken = state.activeContracts.any { it.def.id == def.id }
+                    val conflict = openActive.firstOrNull { it.def.id in def.incompatibleIds || def.id in it.def.incompatibleIds }
+                    val limitReached = openActive.size >= 2
+                    val canAccept = !alreadyTaken && conflict == null && !limitReached
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(if (canAccept) AgedWoodMid else CharcoalBlack.copy(alpha = 0.7f), CutCornerShape(4.dp))
+                            .border(
+                                1.2.dp,
+                                when {
+                                    def.isStorySecret && canAccept -> AmberWarning
+                                    canAccept -> TarnishedBrass
+                                    else -> AgedWoodLight
+                                },
+                                CutCornerShape(4.dp)
+                            )
+                            .padding(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (def.isStorySecret) "★ ${def.title}" else def.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (def.isStorySecret) AmberWarning else AgedIvory,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(def.type.displayName, style = MaterialTheme.typography.labelSmall, color = TarnishedBrass)
+                        }
+                        Text(def.description, style = MaterialTheme.typography.bodySmall, color = Parchment)
+                        if (def.restriction != ContractRestriction.NONE) {
+                            Text("Condición: ${def.restriction.label}", style = MaterialTheme.typography.labelSmall, color = CrimsonBright)
+                        }
+                        Text("Recompensa: ${def.rewardDesc}", style = MaterialTheme.typography.labelSmall, color = MutedMoss)
+                        Spacer(Modifier.height(6.dp))
+                        val btnText = when {
+                            alreadyTaken -> "Ya aceptado"
+                            conflict != null -> "Incompatible (${conflict.def.title})"
+                            limitReached -> "Máximo 2 contratos"
+                            else -> "Aceptar Contrato"
+                        }
+                        ToyboxPlaqueButton(
+                            text = btnText,
+                            primary = canAccept,
+                            enabled = canAccept,
+                            onClick = { onAccept(def) },
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "contract_accept_${def.id}"
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            ToyboxPlaqueButton(
+                text = "Cerrar Tablón",
+                onClick = onClose,
+                modifier = Modifier.fillMaxWidth(),
+                testTag = "contract_close_btn"
+            )
+        }
+    }
+}
+
+@Composable
+fun EmotionStatusDialog(
+    state: GameRunState,
+    onClose: () -> Unit
+) {
+    val em = state.emotionState
+    val mods = EmotionSystem.computeModifiers(em)
+    val accent = Color(em.fusion?.colorHex ?: em.primary.colorHex)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CharcoalBlack.copy(alpha = 0.88f))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        ToyboxFrameCard(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 450.dp),
+            borderColor = accent
+        ) {
+            Text("ESTADO EMOCIONAL DE PATCH", style = MaterialTheme.typography.labelLarge, color = TarnishedBrass)
+            val title = em.fusion?.let { "FUSIÓN: ${it.displayName.uppercase()}" }
+                ?: if (em.primary == PatchEmotion.NEUTRAL) "ESTABLE" else "${em.primary.displayName.uppercase()} (NV.${em.level})"
+            Text(title, style = MaterialTheme.typography.headlineMedium, color = accent)
+            if (em.primary != PatchEmotion.NEUTRAL) {
+                Text(
+                    text = "Duración restante: ${em.durationSec.toInt()}s • Intensidad ${em.intensityScore.toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = ParchmentDark
+                )
+            }
+            StitchedDivider(Modifier.padding(vertical = 8.dp))
+
+            em.fusion?.let { fusion ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(accent.copy(alpha = 0.16f), CutCornerShape(4.dp))
+                        .border(1.dp, accent, CutCornerShape(4.dp))
+                        .padding(8.dp)
+                ) {
+                    Text(fusion.effectSummary, style = MaterialTheme.typography.bodyMedium, color = AgedIvory)
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            Text("Ventajas: ${em.primary.buffsSummary}", style = MaterialTheme.typography.bodyMedium, color = MutedMoss)
+            Spacer(Modifier.height(4.dp))
+            Text("Riesgos: ${em.primary.debuffsSummary}", style = MaterialTheme.typography.bodyMedium, color = CrimsonBright)
+
+            StitchedDivider(Modifier.padding(vertical = 8.dp))
+            Text("IMPACTO ACTIVO EN ESTADÍSTICAS", style = MaterialTheme.typography.labelLarge, color = TarnishedBrass)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Daño x${"%.2f".format(mods.damageMult)} • Cadencia x${"%.2f".format(mods.fireRateMult)} • Velocidad x${"%.2f".format(mods.moveSpeedMult)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = AgedIvory
+            )
+            Text(
+                text = "Detección enemiga x${"%.2f".format(mods.enemyDetectMult)} • Consumo luz x${"%.2f".format(mods.batteryDrainMult)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Parchment
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CharcoalBlack.copy(alpha = 0.65f), CutCornerShape(4.dp))
+                    .border(1.dp, TarnishedBrassDim, CutCornerShape(4.dp))
+                    .padding(8.dp)
+            ) {
+                Image(
+                    bitmap = PixelArtSprites.forLightSource(state.lightSource),
+                    contentDescription = state.lightSource.displayName,
+                    filterQuality = FilterQuality.None,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(28.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${state.lightSource.displayName} (${if (state.lightOn) "Encendida" else "Apagada"} • ${state.lightSourceCharge.toInt()}%)",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = AgedIvory
+                    )
+                    Text(state.lightSource.description, style = MaterialTheme.typography.bodySmall, color = ParchmentDark)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            ToyboxPlaqueButton(
+                text = "Continuar",
+                primary = true,
+                onClick = onClose,
+                modifier = Modifier.fillMaxWidth(),
+                testTag = "emotion_close_btn"
+            )
+        }
+    }
+}
+

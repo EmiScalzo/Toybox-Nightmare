@@ -25,6 +25,11 @@ object AIImageArchiveSystem {
         "img_lore_manufacturer" -> R.drawable.img_lore_manufacturer
         "img_patch_portrait" -> R.drawable.img_patch_portrait
         "img_achievement_book" -> R.drawable.img_achievement_book
+        "img_menu_play_door_sprite" -> R.drawable.img_menu_play_door_sprite
+        "img_menu_sprites_showcase" -> R.drawable.img_menu_sprites_showcase
+        "img_menu_collection_vitrine" -> R.drawable.img_menu_collection_vitrine
+        "img_menu_challenges_box" -> R.drawable.img_menu_challenges_box
+        "img_menu_workshop_radio" -> R.drawable.img_menu_workshop_radio
         else -> R.drawable.img_menu_toyshop
     }
 

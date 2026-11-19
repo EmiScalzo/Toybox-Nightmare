@@ -435,6 +435,30 @@ class ToyboxViewModel(application: Application) : AndroidViewModel(application) 
         _runState.update { st -> st?.let { engine.dismissArchiveDiscovery(it) } }
     }
 
+    fun toggleLight() {
+        _runState.update { st -> st?.let { engine.toggleLight(it) } }
+    }
+
+    fun cycleLightSource() {
+        _runState.update { st -> st?.let { engine.cycleLightSource(it) } }
+    }
+
+    fun openContractBoard() {
+        _runState.update { st -> st?.let { engine.openContractBoard(it) } }
+    }
+
+    fun closeContractBoard() {
+        _runState.update { st -> st?.let { engine.closeContractBoard(it) } }
+    }
+
+    fun acceptContract(def: ContractDef) {
+        _runState.update { st -> st?.let { engine.acceptContract(it, def) } }
+    }
+
+    fun abandonContract(contractId: String) {
+        _runState.update { st -> st?.let { engine.abandonContract(it, contractId) } }
+    }
+
     fun abandonRun() {
         val st = _runState.value
         if (st != null && st.activeCompanions.any { it.id == CompanionId.BUNNY }) {

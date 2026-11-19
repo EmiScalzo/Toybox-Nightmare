@@ -271,6 +271,16 @@ fun CollectionAlbumScreen(
             onBack = onBack
         )
 
+        com.example.ui.components.ToyboxVisualBanner(
+            drawableRes = com.example.R.drawable.img_menu_collection_vitrine,
+            badge = "Vitrina de Coleccionista • ${discoveredKeys.size} descubiertos",
+            caption = "Piezas, reliquias, juguetes y anomalías catalogadas en la tienda",
+            contentDescription = "Vitrina ilustrada de Wonderland Toys",
+            heightDp = 96,
+            modifier = Modifier.padding(horizontal = 14.dp)
+        )
+        Spacer(Modifier.height(10.dp))
+
         // Category Tabs
         Row(
             modifier = Modifier

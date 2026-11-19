@@ -50,8 +50,15 @@ fun GameArenaCanvas(
 
         drawRect(color = CharcoalBlack)
 
-        val floorColor = Color(state.floorTheme.floorColorHex)
-        val wallColor = Color(state.floorTheme.wallColorHex)
+        val profile = state.floorTheme.visualProfile
+        val room = state.currentRoom
+        val floorColor = Color(
+            profile?.floorPaletteHexes
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { it[room.paletteIdx.coerceAtLeast(0) % it.size] }
+                ?: state.floorTheme.floorColorHex
+        )
+        val wallColor = Color(profile?.wallColorHex ?: state.floorTheme.wallColorHex)
         drawRect(color = floorColor, topLeft = Offset(ox, oy), size = Size(arenaPxW, arenaPxH))
 
         val wallPx = asz(WALL_THICKNESS)
@@ -59,7 +66,6 @@ fun GameArenaCanvas(
         val innerTop = oy + wallPx
         val innerRight = ox + arenaPxW - wallPx
         val innerBottom = oy + arenaPxH - wallPx
-        val room = state.currentRoom
         val roomSeed = room.coord.x * 73856093 xor room.coord.y * 19349663 xor (state.floorNumber * 83492791)
 
         // Varied Floor Tilesets per Room Visual Variant & Floor
@@ -112,7 +118,8 @@ fun GameArenaCanvas(
             room.type == RoomType.CURSE || room.type == RoomType.BOSS || room.type == RoomType.FORBIDDEN -> CrimsonBright.copy(alpha = 0.65f)
             room.type == RoomType.TREASURE || room.type == RoomType.SECRET || room.type == RoomType.MANUFACTURER -> TarnishedBrass.copy(alpha = 0.75f)
             room.type == RoomType.LORE -> Color(0xFF9E7AC8).copy(alpha = 0.80f)
-            else -> TarnishedBrassDim.copy(alpha = 0.55f)
+            room.type == RoomType.LABYRINTH -> AmberWarning.copy(alpha = 0.75f)
+            else -> Color(profile?.trimColorHex ?: 0xFFA17835L).copy(alpha = 0.60f)
         }
         drawRect(
             color = trimColor,
@@ -481,6 +488,58 @@ fun GameArenaCanvas(
             }
         }
 
+        // Room Lamps warm pools (under entities)
+        for (lamp in state.roomLamps) {
+            if (lamp.lit) {
+                val lx = ax(lamp.x)
+                val ly = ay(lamp.y)
+                val lr = asz(lamp.radius)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFFFFD88A).copy(alpha = 0.20f), TarnishedBrass.copy(alpha = 0.08f), Color.Transparent),
+                        center = Offset(lx, ly),
+                        radius = lr
+                    ),
+                    radius = lr,
+                    center = Offset(lx, ly)
+                )
+            }
+        }
+
+        // Boss Arena Interactive Props (Puppet Anchors, Surprise Boxes, Rail Switches, Overheat Vents)
+        val activeBossEntity = state.enemies.firstOrNull { it.type.isBoss && it.hp > 0f }
+        for (bProp in state.bossArenaProps) {
+            val bx = ax(bProp.x) + if (bProp.kind == "surprise_box" && bProp.isReal && bProp.active) sin(bProp.shakePhase) * asz(3.2f) else 0f
+            val by = ay(bProp.y)
+            if (bProp.kind == "puppet_anchor" && bProp.active && activeBossEntity != null) {
+                drawLine(
+                    color = Color(0xFF9E64B5).copy(alpha = 0.72f),
+                    start = Offset(ax(activeBossEntity.x), ay(activeBossEntity.y)),
+                    end = Offset(bx, by),
+                    strokeWidth = 3f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), state.elapsedSeconds * 24f)
+                )
+            }
+            if (bProp.active) {
+                val ringCol = when (bProp.kind) {
+                    "puppet_anchor" -> Color(0xFF9E64B5)
+                    "surprise_box" -> if (bProp.isReal) AmberWarning else CrimsonBright
+                    "rail_switch" -> TarnishedBrass
+                    else -> Color(0xFFE5A93B)
+                }
+                drawCircle(ringCol.copy(alpha = 0.25f), asz(28f), Offset(bx, by))
+            }
+            val propBmp = PixelArtMasterSprites.forBossProp(bProp.kind, bProp.active)
+            val propSz = asz(46f)
+            drawImage(
+                image = propBmp,
+                dstOffset = IntOffset((bx - propSz / 2f).toInt(), (by - propSz / 2f).toInt()),
+                dstSize = IntSize(propSz.toInt().coerceAtLeast(1), propSz.toInt().coerceAtLeast(1)),
+                alpha = if (bProp.active) 1f else 0.45f,
+                filterQuality = FilterQuality.None
+            )
+        }
+
         // El Fabricante NPC
         state.manufacturerNpc?.let { npc ->
             if (npc.present) {
@@ -645,6 +704,31 @@ fun GameArenaCanvas(
                         filterQuality = FilterQuality.None
                     )
                 }
+                PickupKind.LIGHT_SOURCE -> {
+                    val lType = runCatching { LightSourceType.valueOf(p.valueStr) }.getOrNull() ?: LightSourceType.CANDLE
+                    val bmp = PixelArtMasterSprites.forLightSource(lType)
+                    val sz = asz(36f)
+                    drawCircle(AmberWarning.copy(alpha = 0.34f), asz(24f), Offset(px, py))
+                    drawCircle(TarnishedBrass, asz(21f), Offset(px, py), style = Stroke(2f))
+                    drawImage(
+                        bmp,
+                        dstOffset = IntOffset((px - sz / 2f).toInt(), (py - sz / 2f + bobFloat).toInt()),
+                        dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                        filterQuality = FilterQuality.None
+                    )
+                }
+                PickupKind.LOST_TOY_TOKEN -> {
+                    val bmp = PixelArtMasterSprites.lostToyToken()
+                    val sz = asz(34f)
+                    drawCircle(MutedMoss.copy(alpha = 0.34f), asz(20f), Offset(px, py))
+                    drawCircle(TarnishedBrass.copy(alpha = 0.7f), asz(18f), Offset(px, py), style = Stroke(1.8f))
+                    drawImage(
+                        bmp,
+                        dstOffset = IntOffset((px - sz / 2f).toInt(), (py - sz / 2f + bobFloat).toInt()),
+                        dstSize = IntSize(sz.toInt().coerceAtLeast(1), sz.toInt().coerceAtLeast(1)),
+                        filterQuality = FilterQuality.None
+                    )
+                }
             }
         }
 
@@ -703,7 +787,44 @@ fun GameArenaCanvas(
                 )
             }
 
-            val bmp = PixelArtSprites.forEnemy(e.type, e.disguised)
+            val specterVulnerable = if (e.type == EnemyType.VEILED_SPECTER) {
+                LightingSystem.isVeiledSpecterVulnerable(state, e)
+            } else e.disguised
+
+            if (e.type == EnemyType.VEILED_SPECTER && !specterVulnerable) {
+                drawCircle(CottonWhite.copy(alpha = 0.28f), er * 1.45f, Offset(ex, ey))
+                drawCircle(CottonWhite.copy(alpha = 0.75f), er * 1.45f, Offset(ex, ey), style = Stroke(2.5f))
+            }
+            if (e.type.isBoss && e.bossArmorActive) {
+                drawCircle(TarnishedBrass.copy(alpha = 0.55f), er * 1.35f, Offset(ex, ey), style = Stroke(3f))
+            }
+            if (e.type.isBoss && e.bossOverheatMeter > 0f) {
+                val heatRatio = (e.bossOverheatMeter / 100f).coerceIn(0f, 1f)
+                drawArc(
+                    color = AmberWarning.copy(alpha = 0.85f),
+                    startAngle = -90f,
+                    sweepAngle = 360f * heatRatio,
+                    useCenter = false,
+                    topLeft = Offset(ex - er * 1.5f, ey - er * 1.5f),
+                    size = Size(er * 3f, er * 3f),
+                    style = Stroke(3.5f)
+                )
+            }
+
+            val isShadowHidden = (e.darknessTrait == DarknessEnemyTrait.SHADOW_INVISIBLE ||
+                e.type == EnemyType.SHADOW_PUPPET ||
+                e.type == EnemyType.MIRROR_COPY) &&
+                !LightingSystem.isPointIlluminated(state, e.x, e.y)
+            val enemyAlpha = when {
+                isShadowHidden -> 0.22f
+                e.isSleeping -> 0.78f
+                else -> 1f
+            }
+
+            val bmp = PixelArtSprites.forEnemy(
+                e.type,
+                if (e.type == EnemyType.VEILED_SPECTER) specterVulnerable else e.disguised
+            )
             val spriteW = er * 2.5f
             val spriteH = spriteW * (bmp.height.toFloat() / bmp.width.toFloat())
             val tintFilter = when {
@@ -716,11 +837,12 @@ fun GameArenaCanvas(
                 image = bmp,
                 dstOffset = IntOffset((ex - spriteW / 2f).toInt(), (ey - spriteH / 2f + bobY).toInt()),
                 dstSize = IntSize(spriteW.toInt().coerceAtLeast(1), spriteH.toInt().coerceAtLeast(1)),
+                alpha = enemyAlpha,
                 colorFilter = tintFilter,
                 filterQuality = FilterQuality.None
             )
 
-            if (!e.type.isBoss && e.hp < e.maxHp) {
+            if (!e.type.isBoss && e.hp < e.maxHp && !isShadowHidden) {
                 val ratio = (e.hp / e.maxHp).coerceIn(0f, 1f)
                 drawRect(CharcoalBlack, Offset(ex - er, ey - spriteH * 0.55f - 8f), Size(er * 2f, 5f))
                 drawRect(CrimsonBright, Offset(ex - er, ey - spriteH * 0.55f - 8f), Size(er * 2f * ratio, 5f))
@@ -741,8 +863,17 @@ fun GameArenaCanvas(
                 }
             }
 
-            // Enemy Relationship Badges (Leader, Protector, Coward, Repairer, Disorganized, Stolen Part)
+            // Enemy Relationship & Alert Badges
             val badgeY = ey - spriteH * 0.55f - 14f
+            if (e.isSleeping) {
+                val zBob = sin(state.elapsedSeconds * 3f + e.id) * asz(3f)
+                drawCircle(SlateBlue.copy(alpha = 0.75f), asz(3.5f), Offset(ex + asz(4f), badgeY + zBob))
+                drawCircle(SlateBlue.copy(alpha = 0.55f), asz(5f), Offset(ex + asz(11f), badgeY - asz(6f) + zBob))
+            } else if (e.alertState in setOf(EnemyAlertState.SUSPICIOUS, EnemyAlertState.ALERT, EnemyAlertState.PANIC)) {
+                drawCircle(Color(e.alertState.colorHex), asz(6f), Offset(ex + asz(10f), badgeY))
+                drawCircle(CharcoalBlack, asz(6f), Offset(ex + asz(10f), badgeY), style = Stroke(1.5f))
+            }
+
             when {
                 e.disorganized -> {
                     drawCircle(AmberWarning, asz(4.5f), Offset(ex - asz(6f), badgeY))
@@ -826,31 +957,58 @@ fun GameArenaCanvas(
             )
         }
 
-        // Localized Lantern Lighting & Defect Perception Effects
-        val pxPx = ax(state.playerX)
-        val pyPx = ay(state.playerY)
+        // Dynamic Room Lighting, Light Source Radius & Floor Lamp Halos
+        val lightCenterOffset = if (state.lightSource.directional && state.lightOn && state.lightSourceCharge > 0f) {
+            asz(72f)
+        } else 0f
+        val pxPx = ax(state.playerX + cos(state.facingAngle) * (lightCenterOffset / scale))
+        val pyPx = ay(state.playerY + sin(state.facingAngle) * (lightCenterOffset / scale))
         val eyeWear = state.equippedParts[BodyZone.EYES]?.wearState
-        var visionScale = if (eyeWear == WearState.DAMAGED) 0.85f else if (eyeWear == WearState.CRITICAL || eyeWear == WearState.DETACHED) 0.72f else 1f
+        var visionScale = if (eyeWear == WearState.DAMAGED) 0.88f else if (eyeWear == WearState.CRITICAL || eyeWear == WearState.DETACHED) 0.75f else 1f
         state.activeDefects.forEach { visionScale *= it.effects.visionScale }
         state.passiveItems.forEach { visionScale *= it.effects.visionBoost }
-        if (state.activeCompanions.any { it.id == CompanionId.PAPER_MOTH }) visionScale *= 1.28f
-        val lightR = asz(470f) * visionScale
-        val roomDarkBias = if (room.type == RoomType.REPAIR || room.type == RoomType.LORE) 0.46f else 0.76f
-        val darkAlpha = (roomDarkBias * vignetteStrength).coerceIn(0.20f, 0.92f)
+        val lightR = asz(LightingSystem.playerLightRadius(state) * 1.45f) * visionScale
+        val modeBias = if (room.type in setOf(RoomType.START, RoomType.SHOP, RoomType.REPAIR)) {
+            0.22f
+        } else {
+            maxOf(room.lightingMode.baseDarkAlpha, (profile?.darknessBias ?: 0.35f) * 0.85f)
+        }
+        val flickerDelta = if (room.lightingMode == RoomLightingMode.FLICKERING) {
+            sin(state.elapsedSeconds * 11f) * 0.10f + sin(state.elapsedSeconds * 23f) * 0.06f
+        } else 0f
+        val darkAlpha = ((modeBias + flickerDelta) * (0.65f + vignetteStrength * 0.45f)).coerceIn(0.18f, 0.94f)
 
         drawRect(
             brush = Brush.radialGradient(
                 colorStops = arrayOf(
                     0.0f to Color.Transparent,
-                    0.48f to Color.Black.copy(alpha = darkAlpha * 0.25f),
+                    0.46f to Color.Black.copy(alpha = darkAlpha * 0.24f),
                     1.0f to CharcoalBlack.copy(alpha = darkAlpha)
                 ),
                 center = Offset(pxPx, pyPx),
-                radius = lightR
+                radius = lightR.coerceAtLeast(asz(140f))
             ),
             topLeft = Offset(ox, oy),
             size = Size(arenaPxW, arenaPxH)
         )
+
+        // Subtle warm glow over lit floor lamps above darkness layer so safe light zones stay legible
+        for (lamp in state.roomLamps) {
+            if (lamp.lit) {
+                val lx = ax(lamp.x)
+                val ly = ay(lamp.y)
+                val lr = asz(lamp.radius * 0.72f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFFFFE19C).copy(alpha = 0.20f), Color.Transparent),
+                        center = Offset(lx, ly),
+                        radius = lr
+                    ),
+                    radius = lr,
+                    center = Offset(lx, ly)
+                )
+            }
+        }
 
         if (state.blackoutAlpha > 0.02f) {
             drawRect(
@@ -1168,6 +1326,15 @@ private fun DrawScope.drawRoomDecorations(
                 style = dashStroke
             )
         }
+        RoomType.LABYRINTH -> {
+            drawRoundRect(
+                color = AmberWarning.copy(alpha = 0.12f),
+                topLeft = Offset(innerLeft + asz(28f), innerTop + asz(28f)),
+                size = Size(innerRight - innerLeft - asz(56f), innerBottom - innerTop - asz(56f)),
+                cornerRadius = CornerRadius(8f, 8f),
+                style = dashStroke
+            )
+        }
         else -> {
             // Subtle room border stitching on some combat/event/secret rooms
             if (room.visualVariant % 2 == 1) {
@@ -1355,6 +1522,30 @@ private fun DrawScope.drawRoomMechanicFloor(
             )
         }
         else -> Unit
+    }
+
+    // Factory Maze directional conveyor chevrons
+    val lab = state.labyrinthState
+    if (lab != null && lab.type == LabyrinthType.FACTORY_MAZE) {
+        val dir = if (lab.conveyorDirX >= 0f) 1f else -1f
+        val yTop = ay(ARENA_H * 0.44f)
+        val yBot = ay(ARENA_H * 0.56f)
+        val yMid = (yTop + yBot) / 2f
+        drawRect(
+            color = CharcoalBlack.copy(alpha = 0.28f),
+            topLeft = Offset(innerLeft + asz(30f), yTop),
+            size = Size(innerRight - innerLeft - asz(60f), yBot - yTop)
+        )
+        val phase = ((state.elapsedSeconds * 55f) % 64f) * dir
+        var cx = innerLeft + asz(80f) + phase
+        while (cx < innerRight - asz(80f)) {
+            if (cx > innerLeft + asz(45f)) {
+                val tipX = cx + dir * asz(14f)
+                drawLine(AmberWarning.copy(alpha = 0.48f), Offset(cx - dir * asz(8f), yTop + asz(14f)), Offset(tipX, yMid), 3f)
+                drawLine(AmberWarning.copy(alpha = 0.48f), Offset(cx - dir * asz(8f), yBot - asz(14f)), Offset(tipX, yMid), 3f)
+            }
+            cx += asz(64f)
+        }
     }
 }
 
